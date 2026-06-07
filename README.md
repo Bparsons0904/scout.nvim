@@ -71,6 +71,27 @@ Set a keymap to `false` to disable it.
 ✓ D  src/old-file.js
 ```
 
+## Recommended diffview.nvim settings
+
+Scout opens diffview with `:DiffviewOpen` but can't control diffview's global layout or highlight settings. For the best experience, configure diffview like this in your own diffview spec:
+
+```lua
+{
+  "sindrets/diffview.nvim",
+  opts = {
+    enhanced_diff_hl = true,
+    view = {
+      default = { layout = "diff2_horizontal" },
+    },
+    file_panel = {
+      win_config = { width = 35 },
+    },
+  },
+}
+```
+
+These are user preferences (horizontal vs vertical split, panel width, highlight intensity) so they intentionally live in your config rather than being forced by scout.
+
 ## License
 
 MIT
