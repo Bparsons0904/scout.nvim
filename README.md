@@ -57,7 +57,7 @@ Set a keymap to `false` to disable it.
 1. `:Scout` — start a session (auto-detects the default branch: origin's HEAD, `origin/main`/`origin/master`, or local `main`/`master`)
 2. `:Scout my-base-branch` — start against a specific base
 3. `<leader>rV` — open a Telescope branch picker to choose the base
-4. In the panel: `<CR>` open · `d` diff · `r` toggle reviewed · `q` close · `?` help (for deleted files, `<CR>` opens the diff)
+4. In the panel: `<CR>` open · `d` diff · `r` toggle reviewed · `q` close · `?` help (for deleted files, `<CR>` opens the diff). `q` only closes the panel — the session stays alive, so `:Scout` (or `<leader>rv`) reopens it.
 5. In a Scout-opened Diffview: `q` or `:ScoutDiffClose` closes the diff and returns to the Scout panel
 6. `:ScoutQuit` or `<leader>rq` — exit review mode from either Scout or its Diffview
 

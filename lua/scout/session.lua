@@ -37,9 +37,46 @@ function M.set_config(cfg)
   _config = cfg or {}
 end
 
+-- Opens the panel for the current `active` session, wiring its callbacks.
+-- Shared by a fresh start and by reopening the panel after it was closed.
+local function open_panel()
+  panel.open(active.files, active.reviewed, {
+    on_select = function(path)
+      vim.cmd("edit " .. vim.fn.fnameescape(active.root .. "/" .. path))
+    end,
+    on_diff = function(path)
+      if M.integration_enabled("diffview") then
+        diff.open_file(active.base_sha, path, panel.focus)
+      end
+    end,
+    on_reviewed = function(path, is_reviewed)
+      if is_reviewed then
+        active.reviewed[path] = true
+      else
+        active.reviewed[path] = nil
+      end
+      persist_reviewed()
+    end,
+  }, _config, active.root)
+end
+
 function M.start(base_override)
   if active then
-    vim.notify("scout: already active — use <leader>rq to exit first", vim.log.levels.WARN)
+    -- A session is already running. Closing the panel with `q` keeps the
+    -- session alive, so re-running start just reopens (or focuses) the panel
+    -- rather than erroring. Switching to a different base must quit first.
+    if base_override and base_override ~= active.base_ref then
+      vim.notify(
+        "scout: already reviewing " .. active.base_ref .. " — use <leader>rq to exit before switching base",
+        vim.log.levels.WARN
+      )
+      return
+    end
+    if panel.is_open() then
+      panel.focus()
+    else
+      open_panel()
+    end
     return
   end
 
@@ -88,24 +125,7 @@ function M.start(base_override)
     gutters.activate(base_sha)
   end
 
-  panel.open(files, reviewed, {
-    on_select = function(path)
-      vim.cmd("edit " .. vim.fn.fnameescape(active.root .. "/" .. path))
-    end,
-    on_diff = function(path)
-      if M.integration_enabled("diffview") then
-        diff.open_file(active.base_sha, path, panel.focus)
-      end
-    end,
-    on_reviewed = function(path, is_reviewed)
-      if is_reviewed then
-        active.reviewed[path] = true
-      else
-        active.reviewed[path] = nil
-      end
-      persist_reviewed()
-    end,
-  }, _config, root)
+  open_panel()
 
   local done = 0
   for _ in pairs(reviewed) do done = done + 1 end

@@ -59,6 +59,10 @@ COMMANDS                                                        *scout-commands*
   scout auto-detects the repo default branch (the origin remote's HEAD,
   then origin/main, origin/master, or a local main/master).
 
+  If a session is already active, :Scout reopens (or focuses) its panel
+  instead of starting over — handy after closing the panel with `q`.
+  Passing a different base while active is refused; quit first.
+
 `:ScoutQuit`                                                    *:ScoutQuit*
   Exit the current review session, close its Diffview and panel, and restore
   gitsigns.
@@ -75,7 +79,8 @@ These keymaps are active only inside the Scout panel buffer:
          file (status D) there is no working-tree copy, so <CR> opens its diff.
   d      Open a side-by-side diff via diffview.nvim
   r      Toggle the file's reviewed status (✓ / unreviewed)
-  q      Close the panel (does not end the session)
+  q      Close the panel (does not end the session). Re-run :Scout or the
+         start keymap to reopen it for the same session.
   ?      Show this keymap reference as a notification
 
 In a Diffview opened by Scout, `q` closes the Diffview and returns to the Scout

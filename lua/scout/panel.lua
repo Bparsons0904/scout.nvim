@@ -142,6 +142,8 @@ function M.open(files, reviewed, callbacks, config, root)
   -- Capture the editing window before the panel split steals focus.
   -- Used by <CR> so files open in the main area, not inside the panel.
   state.main_win = vim.api.nvim_get_current_win()
+  -- Remember which file was focused so we can land the cursor on it below.
+  local focused_path = vim.api.nvim_buf_get_name(0)
 
   state.buf = vim.api.nvim_create_buf(false, true)
   vim.bo[state.buf].buftype = "nofile"
@@ -161,6 +163,21 @@ function M.open(files, reviewed, callbacks, config, root)
   pcall(vim.api.nvim_buf_set_name, state.buf, "Scout")
 
   render()
+
+  -- Land the cursor on the file you were viewing, if it's one of the changed
+  -- files. Seed preview_path to that file so the initial CursorMoved doesn't
+  -- re-edit it and jump the main window off your current position.
+  if focused_path ~= "" and root then
+    local prefix = root .. "/"
+    local rel = focused_path:sub(1, #prefix) == prefix and focused_path:sub(#prefix + 1) or focused_path
+    for i, f in ipairs(state.line_files) do
+      if f and f.path == rel then
+        state.preview_path = rel
+        pcall(vim.api.nvim_win_set_cursor, state.win, { i, 0 })
+        break
+      end
+    end
+  end
 
   local opts = { buffer = state.buf, noremap = true, silent = true }
 
