@@ -1,0 +1,95 @@
+*scout.txt*  Branch review mode for Neovim
+
+==============================================================================
+INTRODUCTION                                                    *scout*
+
+Scout is a structured branch review tool for Neovim. It shows changed files
+in a side panel, lets you open/diff each one, tracks which files you've
+reviewed, and persists that progress across editor restarts.
+
+==============================================================================
+INSTALLATION                                                    *scout-install*
+
+Via lazy.nvim: >lua
+  {
+    "bobparsons/scout.nvim",
+    dependencies = {
+      "lewis6991/gitsigns.nvim",        -- optional: hunk gutters
+      "sindrets/diffview.nvim",         -- optional: side-by-side diff
+      "nvim-telescope/telescope.nvim",  -- optional: branch picker
+    },
+    opts = {},
+  }
+<
+
+==============================================================================
+SETUP                                                           *scout-setup*
+
+Call `require("scout").setup(opts)` with an optional options table. All keys
+are optional — omitted keys keep their defaults.
+
+Default options: >lua
+  require("scout").setup({
+    keys = {
+      start      = "<leader>rv",   -- start review (auto-detect base branch)
+      start_pick = "<leader>rV",   -- start review (picker for base branch)
+      quit       = "<leader>rq",   -- exit review mode
+    },
+    panel = {
+      width    = 45,          -- panel width in columns
+      position = "topleft",   -- "topleft" or "botright"
+    },
+    integrations = {
+      gitsigns  = true,  -- change gitsigns base to show diffs from merge-base
+      diffview  = true,  -- open diffview.nvim on `d` in panel
+      telescope = true,  -- use telescope for branch picker
+    },
+  })
+<
+
+To disable a keymap, set it to `false`: >lua
+  opts = { keys = { start_pick = false } }
+<
+
+==============================================================================
+COMMANDS                                                        *scout-commands*
+
+`:Scout [base]`                                                 *:Scout*
+  Start a review session. Optionally pass a base branch/ref. If omitted,
+  scout auto-detects the repo default branch (origin/main or origin/master).
+
+`:ScoutQuit`                                                    *:ScoutQuit*
+  Exit the current review session, close the panel, and restore gitsigns.
+
+==============================================================================
+PANEL KEYMAPS                                                   *scout-panel*
+
+These keymaps are active only inside the Scout panel buffer:
+
+  <CR>   Open the file under cursor in the main editing window
+  d      Open a side-by-side diff via diffview.nvim
+  r      Toggle the file's reviewed status (✓ / unreviewed)
+  q      Close the panel (does not end the session)
+  ?      Show this keymap reference as a notification
+
+==============================================================================
+FEATURES                                                        *scout-features*
+
+Auto-preview ~
+  Moving the cursor over a file in the panel automatically opens it in the
+  main window and jumps to the first changed hunk (debounced 150ms). Focus
+  stays in the panel.
+
+Persistence ~
+  Reviewed-file state is saved to:
+    `$XDG_STATE_HOME/nvim/scout/{key}.json`
+
+  Re-entering review mode for the same branch/base restores your previous
+  progress.
+
+Optional integrations ~
+  All three optional integrations (gitsigns, diffview, telescope) degrade
+  gracefully if the plugin is not installed — scout warns once and continues.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

@@ -1,0 +1,36 @@
+local git = require("scout.git")
+
+describe("git.parse_name_status", function()
+  it("parses modified file", function()
+    local result = git.parse_name_status("M\tsrc/foo.lua\n")
+    assert.same({ { status = "M", path = "src/foo.lua" } }, result)
+  end)
+
+  it("parses added file", function()
+    local result = git.parse_name_status("A\tnew/bar.go\n")
+    assert.same({ { status = "A", path = "new/bar.go" } }, result)
+  end)
+
+  it("parses deleted file", function()
+    local result = git.parse_name_status("D\told/baz.py\n")
+    assert.same({ { status = "D", path = "old/baz.py" } }, result)
+  end)
+
+  it("parses rename (R100) as R, takes new path", function()
+    local result = git.parse_name_status("R100\told.lua\tnew.lua\n")
+    assert.same({ { status = "R", path = "new.lua" } }, result)
+  end)
+
+  it("parses multiple files", function()
+    local result = git.parse_name_status("M\ta.lua\nA\tb.lua\nD\tc.lua\n")
+    assert.equals(3, #result)
+    assert.equals("M", result[1].status)
+    assert.equals("A", result[2].status)
+    assert.equals("D", result[3].status)
+  end)
+
+  it("returns empty table for empty output", function()
+    local result = git.parse_name_status("")
+    assert.same({}, result)
+  end)
+end)
