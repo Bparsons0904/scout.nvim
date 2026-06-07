@@ -17,11 +17,12 @@ local defaults = {
   },
 }
 
-local function deep_merge(base, override)
+-- Exposed (underscore-prefixed) for unit testing; not part of the public API.
+function M._deep_merge(base, override)
   local result = vim.deepcopy(base)
   for k, v in pairs(override or {}) do
     if type(v) == "table" and type(result[k]) == "table" then
-      result[k] = deep_merge(result[k], v)
+      result[k] = M._deep_merge(result[k], v)
     else
       result[k] = v
     end
@@ -29,9 +30,8 @@ local function deep_merge(base, override)
   return result
 end
 
-local function start_pick(cfg)
-  local use_telescope = cfg.integrations and cfg.integrations.telescope ~= false
-  if use_telescope then
+local function start_pick()
+  if require("scout.session").integration_enabled("telescope") then
     local ok_tel, builtin     = pcall(require, "telescope.builtin")
     local ok_act, actions     = pcall(require, "telescope.actions")
     local ok_state, act_state = pcall(require, "telescope.actions.state")
@@ -57,7 +57,7 @@ local function start_pick(cfg)
 end
 
 function M.setup(opts)
-  local cfg = deep_merge(defaults, opts or {})
+  local cfg = M._deep_merge(defaults, opts or {})
   local session = require("scout.session")
   session.set_config(cfg)
 
@@ -69,7 +69,7 @@ function M.setup(opts)
   end
 
   if keys.start_pick then
-    vim.keymap.set("n", keys.start_pick, function() start_pick(cfg) end,
+    vim.keymap.set("n", keys.start_pick, function() start_pick() end,
       { desc = "Scout: start review (pick base branch)" })
   end
 
@@ -88,6 +88,10 @@ function M.setup(opts)
   vim.api.nvim_create_user_command("ScoutQuit", function()
     session.stop()
   end, { desc = "Exit branch review mode" })
+
+  vim.api.nvim_create_user_command("ScoutDiffClose", function()
+    require("scout.diff").close()
+  end, { desc = "Close Scout diff and return to the panel" })
 end
 
 return M

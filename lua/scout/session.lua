@@ -9,10 +9,19 @@ local diff = require("scout.diff")
 local active = nil
 local _config = {}
 
-local function make_key(base_ref, base_sha)
-  local root = vim.fn.system("git rev-parse --show-toplevel 2>/dev/null"):gsub("[\n\r]", "")
+-- An integration is on unless the user explicitly set it to false.
+function M.integration_enabled(name)
+  return not _config.integrations or _config.integrations[name] ~= false
+end
+
+-- Exposed (underscore-prefixed) for unit testing; not part of the public API.
+function M._make_key(root, branch, base_ref, base_sha, head_sha)
+  return table.concat({ root, branch, base_ref, base_sha, head_sha }, "|")
+end
+
+local function current_branch()
   local branch = vim.fn.system("git rev-parse --abbrev-ref HEAD 2>/dev/null"):gsub("[\n\r]", "")
-  return root .. "|" .. branch .. "|" .. base_ref .. "|" .. base_sha
+  return branch
 end
 
 local function persist_reviewed()
@@ -52,7 +61,13 @@ function M.start(base_override)
     return
   end
 
-  local key = make_key(base_ref, base_sha)
+  local root = git.root()
+  local head_sha = git.head()
+  if not head_sha then
+    vim.notify("scout: could not determine current HEAD", vim.log.levels.ERROR)
+    return
+  end
+  local key = M._make_key(root, current_branch(), base_ref, base_sha, head_sha)
   local saved = persist.load(key)
   local reviewed = {}
   for _, path in ipairs(saved.reviewed or {}) do
@@ -65,20 +80,21 @@ function M.start(base_override)
     files = files,
     reviewed = reviewed,
     key = key,
+    root = root,
+    head_sha = head_sha,
   }
 
-  if not _config.integrations or _config.integrations.gitsigns ~= false then
+  if M.integration_enabled("gitsigns") then
     gutters.activate(base_sha)
   end
 
   panel.open(files, reviewed, {
     on_select = function(path)
-      local root = vim.fn.system("git rev-parse --show-toplevel 2>/dev/null"):gsub("[\n\r]", "")
-      vim.cmd("edit " .. vim.fn.fnameescape(root .. "/" .. path))
+      vim.cmd("edit " .. vim.fn.fnameescape(active.root .. "/" .. path))
     end,
     on_diff = function(path)
-      if not _config.integrations or _config.integrations.diffview ~= false then
-        diff.open_file(active.base_sha, path)
+      if M.integration_enabled("diffview") then
+        diff.open_file(active.base_sha, path, panel.focus)
       end
     end,
     on_reviewed = function(path, is_reviewed)
@@ -89,7 +105,7 @@ function M.start(base_override)
       end
       persist_reviewed()
     end,
-  }, _config)
+  }, _config, root)
 
   local done = 0
   for _ in pairs(reviewed) do done = done + 1 end
@@ -110,8 +126,9 @@ function M.stop()
     vim.notify("scout: no active session", vim.log.levels.INFO)
     return
   end
+  diff.close(false)
   panel.close()
-  if not _config.integrations or _config.integrations.gitsigns ~= false then
+  if M.integration_enabled("gitsigns") then
     gutters.restore()
   end
   active = nil

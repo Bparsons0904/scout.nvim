@@ -5,8 +5,8 @@ Structured branch review mode for Neovim. Scout gives you a file panel for the c
 ## Features
 
 - Side panel listing all changed files (M/A/D/R) split into unreviewed / reviewed sections
-- Mark files as reviewed with `r`; progress persists across restarts
-- Auto-preview: hovering a file opens it in the main window and jumps to the first changed hunk
+- Mark files as reviewed with `r`; progress persists across restarts until the branch receives a new commit
+- Auto-preview: hovering a file opens it in the main window and, with gitsigns enabled, jumps to the first changed hunk
 - `d` opens a full side-by-side diff via diffview.nvim
 - Gitsigns gutters show diffs relative to the merge-base, not HEAD
 - Telescope branch picker for choosing the base branch
@@ -54,11 +54,12 @@ Set a keymap to `false` to disable it.
 
 ## Usage
 
-1. `:Scout` — start a session (auto-detects `origin/main` or `origin/master`)
+1. `:Scout` — start a session (auto-detects the default branch: origin's HEAD, `origin/main`/`origin/master`, or local `main`/`master`)
 2. `:Scout my-base-branch` — start against a specific base
 3. `<leader>rV` — open a Telescope branch picker to choose the base
-4. In the panel: `<CR>` open · `d` diff · `r` toggle reviewed · `q` close · `?` help
-5. `:ScoutQuit` or `<leader>rq` — exit review mode
+4. In the panel: `<CR>` open · `d` diff · `r` toggle reviewed · `q` close · `?` help (for deleted files, `<CR>` opens the diff)
+5. In a Scout-opened Diffview: `q` or `:ScoutDiffClose` closes the diff and returns to the Scout panel
+6. `:ScoutQuit` or `<leader>rq` — exit review mode from either Scout or its Diffview
 
 ## Panel
 

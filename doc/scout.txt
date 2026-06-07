@@ -56,36 +56,47 @@ COMMANDS                                                        *scout-commands*
 
 `:Scout [base]`                                                 *:Scout*
   Start a review session. Optionally pass a base branch/ref. If omitted,
-  scout auto-detects the repo default branch (origin/main or origin/master).
+  scout auto-detects the repo default branch (the origin remote's HEAD,
+  then origin/main, origin/master, or a local main/master).
 
 `:ScoutQuit`                                                    *:ScoutQuit*
-  Exit the current review session, close the panel, and restore gitsigns.
+  Exit the current review session, close its Diffview and panel, and restore
+  gitsigns.
+
+`:ScoutDiffClose`                                          *:ScoutDiffClose*
+  Close the Diffview opened by Scout and return focus to the Scout panel.
 
 ==============================================================================
 PANEL KEYMAPS                                                   *scout-panel*
 
 These keymaps are active only inside the Scout panel buffer:
 
-  <CR>   Open the file under cursor in the main editing window
+  <CR>   Open the file under cursor in the main editing window. For a deleted
+         file (status D) there is no working-tree copy, so <CR> opens its diff.
   d      Open a side-by-side diff via diffview.nvim
   r      Toggle the file's reviewed status (✓ / unreviewed)
   q      Close the panel (does not end the session)
   ?      Show this keymap reference as a notification
+
+In a Diffview opened by Scout, `q` closes the Diffview and returns to the Scout
+panel. `:ScoutDiffClose` provides the same behavior.
 
 ==============================================================================
 FEATURES                                                        *scout-features*
 
 Auto-preview ~
   Moving the cursor over a file in the panel automatically opens it in the
-  main window and jumps to the first changed hunk (debounced 150ms). Focus
-  stays in the panel.
+  main window and, when gitsigns integration is enabled, jumps to the first
+  changed hunk (debounced 150ms). Focus stays in the panel. Deleted files are
+  skipped (use <CR> for their diff).
 
 Persistence ~
   Reviewed-file state is saved to:
-    `$XDG_STATE_HOME/nvim/scout/{key}.json`
+    `$XDG_STATE_HOME/nvim/scout/{sha256(key)}.json`
 
-  Re-entering review mode for the same branch/base restores your previous
-  progress.
+  Re-entering review mode for the same branch/base/HEAD restores your previous
+  progress. A new commit starts fresh progress so changed content is never
+  silently treated as already reviewed.
 
 Optional integrations ~
   All three optional integrations (gitsigns, diffview, telescope) degrade

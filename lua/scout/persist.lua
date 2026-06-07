@@ -7,8 +7,7 @@ local function state_dir()
 end
 
 local function state_path(key)
-  local safe = key:gsub("[/\\|:*?\"<>]", "_"):sub(1, 180)
-  return state_dir() .. "/" .. safe .. ".json"
+  return state_dir() .. "/" .. vim.fn.sha256(key) .. ".json"
 end
 
 function M.load(key)
