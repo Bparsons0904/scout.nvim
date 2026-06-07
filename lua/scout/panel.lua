@@ -2,6 +2,28 @@ local M = {}
 
 local ns = vim.api.nvim_create_namespace("scout_panel")
 
+-- Status letter → highlight group. Linked to the standard diff groups so they
+-- track the colorscheme (A green, M/R orange-ish, D red); default = true lets
+-- users override.
+local STATUS_HL = {
+  A = "ScoutStatusAdded",
+  M = "ScoutStatusModified",
+  D = "ScoutStatusDeleted",
+  R = "ScoutStatusRenamed",
+}
+
+local function setup_highlights()
+  local set = function(name, link)
+    vim.api.nvim_set_hl(0, name, { link = link, default = true })
+  end
+  set("ScoutStatusAdded", "Added")
+  set("ScoutStatusModified", "Changed")
+  set("ScoutStatusDeleted", "Removed")
+  set("ScoutStatusRenamed", "Changed")
+  set("ScoutAdded", "Added")
+  set("ScoutDeleted", "Removed")
+end
+
 local state = {
   buf = nil,
   win = nil,
@@ -32,9 +54,13 @@ local function render()
     end
   end
 
+  -- { line = 0-based row, file = f, status_col = byte col of the status letter }
+  local marks = {}
+
   for _, f in ipairs(unreviewed) do
     table.insert(lines, string.format("  %s  %s", f.status, vim.fn.strtrans(f.path)))
     table.insert(line_files, f)
+    table.insert(marks, { line = #lines - 1, file = f, status_col = 2 })
   end
 
   if #done > 0 then
@@ -43,8 +69,10 @@ local function render()
     table.insert(lines, "── reviewed ─────────────────────────")
     table.insert(line_files, false)
     for _, f in ipairs(done) do
+      -- "✓ " is the 3-byte UTF-8 ✓ plus a space, so the status letter is at col 4.
       table.insert(lines, string.format("\xE2\x9C\x93 %s  %s", f.status, vim.fn.strtrans(f.path)))
       table.insert(line_files, f)
+      table.insert(marks, { line = #lines - 1, file = f, status_col = 4 })
     end
   end
 
@@ -60,6 +88,29 @@ local function render()
   if separator_idx then
     for i = separator_idx, #lines do
       vim.hl.range(state.buf, ns, "Comment", { i - 1, 0 }, { i - 1, -1 })
+    end
+  end
+
+  -- Color the status letter and append right-aligned +added/-deleted counts.
+  for _, m in ipairs(marks) do
+    local hl = STATUS_HL[m.file.status]
+    if hl then
+      vim.hl.range(state.buf, ns, hl, { m.line, m.status_col }, { m.line, m.status_col + 1 })
+    end
+    local virt = {}
+    if m.file.added then
+      table.insert(virt, { "+" .. m.file.added, "ScoutAdded" })
+    end
+    if m.file.deleted then
+      if #virt > 0 then table.insert(virt, { " " }) end
+      table.insert(virt, { "-" .. m.file.deleted, "ScoutDeleted" })
+    end
+    if #virt > 0 then
+      table.insert(virt, { " " })
+      vim.api.nvim_buf_set_extmark(state.buf, ns, m.line, 0, {
+        virt_text = virt,
+        virt_text_pos = "right_align",
+      })
     end
   end
 end
@@ -79,6 +130,8 @@ end
 
 function M.open(files, reviewed, callbacks, config, root)
   if M.is_open() then M.close() end
+
+  setup_highlights()
 
   state.files = files
   state.reviewed = reviewed or {}

@@ -4,7 +4,7 @@ Structured branch review mode for Neovim. Scout gives you a file panel for the c
 
 ## Features
 
-- Side panel listing all changed files (M/A/D/R) split into unreviewed / reviewed sections
+- Side panel listing all changed files (M/A/D/R) split into unreviewed / reviewed sections, with color-coded status letters and per-file +added/-deleted line counts
 - Mark files as reviewed with `r`; progress persists across restarts until the branch receives a new commit
 - Auto-preview: hovering a file opens it in the main window and, with gitsigns enabled, jumps to the first changed hunk
 - `d` opens a full side-by-side diff via diffview.nvim
@@ -17,7 +17,7 @@ Structured branch review mode for Neovim. Scout gives you a file panel for the c
 ```lua
 -- lazy.nvim
 {
-  "bobparsons/scout.nvim",
+  url = "https://git.bobparsons.dev/deadstyle/scout.nvim",
   dependencies = {
     "lewis6991/gitsigns.nvim",        -- optional: hunk gutters
     "sindrets/diffview.nvim",         -- optional: side-by-side diff
@@ -64,13 +64,16 @@ Set a keymap to `false` to disable it.
 ## Panel
 
 ```
-  M  src/components/Button.tsx
-  A  src/utils/api.ts
+  M  src/components/Button.tsx                 +24 -6
+  A  src/utils/api.ts                          +58
 
 ── reviewed ─────────────────────────
-✓ M  src/store.ts
-✓ D  src/old-file.js
+✓ M  src/store.ts                              +3 -3
+✓ D  src/old-file.js                           -41
 ```
+
+The status letter is color-coded (A green, M/R orange, D red) and each file
+shows its added/deleted line counts, right-aligned.
 
 ## Recommended diffview.nvim settings
 
@@ -92,6 +95,13 @@ Scout opens diffview with `:DiffviewOpen` but can't control diffview's global la
 ```
 
 These are user preferences (horizontal vs vertical split, panel width, highlight intensity) so they intentionally live in your config rather than being forced by scout.
+
+## AI acknowledgement
+
+This plugin was built with AI assistance (Claude Code and Codex). AI was used to accelerate
+proof-of-concept exploration, write and refine the test suite, and help debug
+edge cases. All code was reviewed, tested, and is maintained by a human; the
+architecture, design decisions, and final shape of the project are my own.
 
 ## License
 

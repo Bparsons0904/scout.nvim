@@ -84,6 +84,14 @@ panel. `:ScoutDiffClose` provides the same behavior.
 ==============================================================================
 FEATURES                                                        *scout-features*
 
+File display ~
+  Each panel line shows the status letter and path, plus right-aligned
+  +added/-deleted line counts. The status letter is color-coded: A green,
+  M/R orange, D red. Counts are omitted for binary files. The highlight
+  groups (`ScoutStatusAdded`, `ScoutStatusModified`, `ScoutStatusDeleted`,
+  `ScoutStatusRenamed`, `ScoutAdded`, `ScoutDeleted`) link to the standard
+  diff groups by default and can be overridden.
+
 Auto-preview ~
   Moving the cursor over a file in the panel automatically opens it in the
   main window and, when gitsigns integration is enabled, jumps to the first

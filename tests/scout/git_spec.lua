@@ -39,3 +39,38 @@ describe("git.parse_name_status", function()
     assert.same({ { status = "M", path = path } }, git.parse_name_status("M\0" .. path .. "\0"))
   end)
 end)
+
+describe("git.parse_numstat", function()
+  it("parses added/deleted counts for a file", function()
+    assert.same(
+      { ["src/foo.lua"] = { added = 12, deleted = 3 } },
+      git.parse_numstat("12\t3\tsrc/foo.lua\0")
+    )
+  end)
+
+  it("yields nil counts for binary files", function()
+    assert.same({ ["bin.dat"] = {} }, git.parse_numstat("-\t-\tbin.dat\0"))
+  end)
+
+  it("keys a rename by its new path", function()
+    assert.same(
+      { ["new.lua"] = { added = 5, deleted = 2 } },
+      git.parse_numstat("5\t2\t\0old.lua\0new.lua\0")
+    )
+  end)
+
+  it("parses multiple files", function()
+    local stats = git.parse_numstat("1\t0\ta.lua\0" .. "0\t4\tb.lua\0")
+    assert.same({ added = 1, deleted = 0 }, stats["a.lua"])
+    assert.same({ added = 0, deleted = 4 }, stats["b.lua"])
+  end)
+
+  it("preserves tabs in paths", function()
+    local path = "dir/a\tb.lua"
+    assert.same({ [path] = { added = 1, deleted = 1 } }, git.parse_numstat("1\t1\t" .. path .. "\0"))
+  end)
+
+  it("returns empty table for empty output", function()
+    assert.same({}, git.parse_numstat(""))
+  end)
+end)
