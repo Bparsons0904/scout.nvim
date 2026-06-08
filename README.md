@@ -19,7 +19,7 @@ Requires Neovim 0.10+ and Git.
 ```lua
 -- lazy.nvim
 {
-  url = "https://git.bobparsons.dev/deadstyle/scout.nvim",
+  "Bparsons0904/scout.nvim",
   dependencies = {
     "lewis6991/gitsigns.nvim",        -- optional: hunk gutters
     "sindrets/diffview.nvim",         -- optional: side-by-side diff
