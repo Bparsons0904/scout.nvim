@@ -1,11 +1,8 @@
-local M = {}
+local panel = {}
 
-local ns = vim.api.nvim_create_namespace("scout_panel")
+local namespace = vim.api.nvim_create_namespace("scout_panel")
 
--- Status letter → highlight group. Linked to the standard diff groups so they
--- track the colorscheme (A green, M/R orange-ish, D red); default = true lets
--- users override.
-local STATUS_HL = {
+local STATUS_HIGHLIGHTS = {
   A = "ScoutStatusAdded",
   M = "ScoutStatusModified",
   D = "ScoutStatusDeleted",
@@ -14,16 +11,16 @@ local STATUS_HL = {
 }
 
 local function setup_highlights()
-  local set = function(name, link)
+  local set_highlight = function(name, link)
     vim.api.nvim_set_hl(0, name, { link = link, default = true })
   end
-  set("ScoutStatusAdded", "Added")
-  set("ScoutStatusModified", "Changed")
-  set("ScoutStatusDeleted", "Removed")
-  set("ScoutStatusRenamed", "Changed")
-  set("ScoutStatusTypeChanged", "Changed")
-  set("ScoutAdded", "Added")
-  set("ScoutDeleted", "Removed")
+  set_highlight("ScoutStatusAdded", "Added")
+  set_highlight("ScoutStatusModified", "Changed")
+  set_highlight("ScoutStatusDeleted", "Removed")
+  set_highlight("ScoutStatusRenamed", "Changed")
+  set_highlight("ScoutStatusTypeChanged", "Changed")
+  set_highlight("ScoutAdded", "Added")
+  set_highlight("ScoutDeleted", "Removed")
 end
 
 local highlight_group = vim.api.nvim_create_augroup("scout_panel_highlights", { clear = true })
@@ -33,312 +30,346 @@ vim.api.nvim_create_autocmd("ColorScheme", {
 })
 
 local state = {
-  buf = nil,
-  win = nil,
-  main_win = nil,
+  buffer = nil,
+  window = nil,
+  main_window = nil,
   preview_path = nil,
   preview_timer = nil,
-  root = nil,
-  files = {},
-  line_files = {},
-  reviewed = {},
-  callbacks = {},
-  config = {},
+  repository_root = nil,
+  changed_files = {},
+  files_by_line = {},
+  reviewed_paths = {},
+  callback_handlers = {},
+  configuration = {},
 }
 
 local function render()
-  if not state.buf or not vim.api.nvim_buf_is_valid(state.buf) then return end
+  if not state.buffer or not vim.api.nvim_buf_is_valid(state.buffer) then
+    return
+  end
 
-  vim.bo[state.buf].modifiable = true
+  vim.bo[state.buffer].modifiable = true
   local lines = {}
-  local line_files = {}
-  local unreviewed, done = {}, {}
-  local separator_idx = nil
+  local files_by_line = {}
+  local unreviewed_files, reviewed_files = {}, {}
+  local separator_index = nil
 
-  for _, f in ipairs(state.files) do
-    if state.reviewed[f.path] then
-      table.insert(done, f)
+  for _, file in ipairs(state.changed_files) do
+    if state.reviewed_paths[file.path] then
+      table.insert(reviewed_files, file)
     else
-      table.insert(unreviewed, f)
+      table.insert(unreviewed_files, file)
     end
   end
 
-  -- { line = 0-based row, file = f, status_col = byte col of the status letter }
-  local marks = {}
+  local highlight_marks = {}
 
-  for _, f in ipairs(unreviewed) do
-    table.insert(lines, string.format("  %s  %s", f.status, vim.fn.strtrans(f.path)))
-    table.insert(line_files, f)
-    table.insert(marks, { line = #lines - 1, file = f, status_col = 2 })
+  for _, file in ipairs(unreviewed_files) do
+    table.insert(lines, string.format("  %s  %s", file.status, vim.fn.strtrans(file.path)))
+    table.insert(files_by_line, file)
+    table.insert(highlight_marks, { line = #lines - 1, file = file, status_column = 2 })
   end
 
-  if #done > 0 then
+  if #reviewed_files > 0 then
     table.insert(lines, "")
-    table.insert(line_files, false)
+    table.insert(files_by_line, false)
     table.insert(lines, "── reviewed ─────────────────────────")
-    table.insert(line_files, false)
-    separator_idx = #lines
-    for _, f in ipairs(done) do
-      -- "✓ " is the 3-byte UTF-8 ✓ plus a space, so the status letter is at col 4.
-      table.insert(lines, string.format("\xE2\x9C\x93 %s  %s", f.status, vim.fn.strtrans(f.path)))
-      table.insert(line_files, f)
-      table.insert(marks, { line = #lines - 1, file = f, status_col = 4 })
+    table.insert(files_by_line, false)
+    separator_index = #lines
+    for _, file in ipairs(reviewed_files) do
+      -- Extmark columns are byte-indexed, and the checkmark occupies three bytes.
+      table.insert(lines, string.format("\xE2\x9C\x93 %s  %s", file.status, vim.fn.strtrans(file.path)))
+      table.insert(files_by_line, file)
+      table.insert(highlight_marks, { line = #lines - 1, file = file, status_column = 4 })
     end
   end
 
-  state.line_files = line_files
-  vim.api.nvim_buf_set_lines(state.buf, 0, -1, false, lines)
-  vim.bo[state.buf].modifiable = false
+  state.files_by_line = files_by_line
+  vim.api.nvim_buf_set_lines(state.buffer, 0, -1, false, lines)
+  vim.bo[state.buffer].modifiable = false
 
-  vim.api.nvim_buf_clear_namespace(state.buf, ns, 0, -1)
-  if separator_idx then
-    for i = separator_idx, #lines do
-      vim.api.nvim_buf_add_highlight(state.buf, ns, "Comment", i - 1, 0, -1)
+  vim.api.nvim_buf_clear_namespace(state.buffer, namespace, 0, -1)
+  if separator_index then
+    for line_index = separator_index, #lines do
+      vim.api.nvim_buf_set_extmark(state.buffer, namespace, line_index - 1, 0, {
+        end_col = #(lines[line_index] or ""),
+        hl_group = "Comment",
+      })
     end
   end
 
-  -- Color the status letter and append right-aligned +added/-deleted counts.
-  for _, m in ipairs(marks) do
-    local hl = STATUS_HL[m.file.status]
-    if hl then
-      vim.api.nvim_buf_add_highlight(state.buf, ns, hl, m.line, m.status_col, m.status_col + 1)
+  for _, mark in ipairs(highlight_marks) do
+    local highlight = STATUS_HIGHLIGHTS[mark.file.status]
+    if highlight then
+      vim.api.nvim_buf_set_extmark(state.buffer, namespace, mark.line, mark.status_column, {
+        end_col = mark.status_column + 1,
+        hl_group = highlight,
+      })
     end
-    local virt = {}
-    if m.file.added then
-      table.insert(virt, { "+" .. m.file.added, "ScoutAdded" })
+    local virtual_text = {}
+    if mark.file.added then
+      table.insert(virtual_text, { "+" .. mark.file.added, "ScoutAdded" })
     end
-    if m.file.deleted then
-      if #virt > 0 then table.insert(virt, { " " }) end
-      table.insert(virt, { "-" .. m.file.deleted, "ScoutDeleted" })
+    if mark.file.deleted then
+      if #virtual_text > 0 then
+        table.insert(virtual_text, { " " })
+      end
+      table.insert(virtual_text, { "-" .. mark.file.deleted, "ScoutDeleted" })
     end
-    if #virt > 0 then
-      table.insert(virt, { " " })
-      vim.api.nvim_buf_set_extmark(state.buf, ns, m.line, 0, {
-        virt_text = virt,
+    if #virtual_text > 0 then
+      table.insert(virtual_text, { " " })
+      vim.api.nvim_buf_set_extmark(state.buffer, namespace, mark.line, 0, {
+        virt_text = virtual_text,
         virt_text_pos = "right_align",
       })
     end
   end
 end
 
--- Returns path, status parsed from a rendered panel line. Tolerant of both
--- "  M  path" (unreviewed) and "\xE2\x9C\x93 M  path" (reviewed; ✓ = 3 UTF-8
--- bytes). Returns nil for non-file lines (blank, separator). Exposed for tests.
-function M.path_from_line(line)
+function panel.path_from_line(line)
   local status, path = line:match("^.-%s+([ADMRT])%s+(.+)$")
   return path, status
 end
 
 local function current_file()
-  local row = vim.api.nvim_win_get_cursor(0)[1]
-  return state.line_files[row] or nil
+  local line_number = vim.api.nvim_win_get_cursor(0)[1]
+  return state.files_by_line[line_number] or nil
 end
 
-function M.open(files, reviewed, callbacks, config, root)
-  if M.is_open() then M.close() end
+function panel.open(changed_files, reviewed_paths, callback_handlers, configuration, repository_root)
+  if panel.is_open() then
+    panel.close()
+  end
 
   setup_highlights()
 
-  state.files = files
-  state.reviewed = reviewed or {}
-  state.callbacks = callbacks or {}
-  state.config = config or {}
-  state.root = root
+  state.changed_files = changed_files
+  state.reviewed_paths = reviewed_paths or {}
+  state.callback_handlers = callback_handlers or {}
+  state.configuration = configuration or {}
+  state.repository_root = repository_root
 
-  -- Capture the editing window before the panel split steals focus.
-  -- Used by <CR> so files open in the main area, not inside the panel.
-  state.main_win = vim.api.nvim_get_current_win()
-  -- Remember which file was focused so we can land the cursor on it below.
+  -- The split steals focus, so capture the editing window first.
+  state.main_window = vim.api.nvim_get_current_win()
   local focused_path = vim.api.nvim_buf_get_name(0)
 
-  state.buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[state.buf].buftype = "nofile"
-  vim.bo[state.buf].bufhidden = "wipe"
-  vim.bo[state.buf].swapfile = false
+  state.buffer = vim.api.nvim_create_buf(false, true)
+  vim.bo[state.buffer].buftype = "nofile"
+  vim.bo[state.buffer].bufhidden = "wipe"
+  vim.bo[state.buffer].swapfile = false
 
-  local position = (state.config.panel and state.config.panel.position) or "topleft"
+  local position = (state.configuration.panel and state.configuration.panel.position) or "topleft"
   vim.cmd(position .. " vsplit")
-  state.win = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(state.win, state.buf)
-  vim.api.nvim_win_set_width(state.win, (state.config.panel and state.config.panel.width) or 45)
-  vim.wo[state.win].number = false
-  vim.wo[state.win].relativenumber = false
-  vim.wo[state.win].signcolumn = "no"
-  vim.wo[state.win].wrap = false
-  vim.wo[state.win].cursorline = true
-  pcall(vim.api.nvim_buf_set_name, state.buf, "Scout")
+  state.window = vim.api.nvim_get_current_win()
+  vim.api.nvim_win_set_buf(state.window, state.buffer)
+  vim.api.nvim_win_set_width(state.window, (state.configuration.panel and state.configuration.panel.width) or 45)
+  vim.wo[state.window].number = false
+  vim.wo[state.window].relativenumber = false
+  vim.wo[state.window].signcolumn = "no"
+  vim.wo[state.window].wrap = false
+  vim.wo[state.window].cursorline = true
+  pcall(vim.api.nvim_buf_set_name, state.buffer, "Scout")
 
   render()
 
-  -- Land the cursor on the file you were viewing, if it's one of the changed
-  -- files. Seed preview_path to that file so the initial CursorMoved doesn't
-  -- re-edit it and jump the main window off your current position.
-  if focused_path ~= "" and root then
-    local prefix = root .. "/"
-    local rel = focused_path:sub(1, #prefix) == prefix and focused_path:sub(#prefix + 1) or focused_path
-    for i, f in ipairs(state.line_files) do
-      if f and f.path == rel then
-        state.preview_path = rel
-        pcall(vim.api.nvim_win_set_cursor, state.win, { i, 0 })
+  -- Seeding the preview path prevents the initial CursorMoved from reopening the current file.
+  if focused_path ~= "" and repository_root then
+    local root_prefix = repository_root .. "/"
+    local relative_path = focused_path:sub(1, #root_prefix) == root_prefix and focused_path:sub(#root_prefix + 1)
+      or focused_path
+    for line_number, file in ipairs(state.files_by_line) do
+      if file and file.path == relative_path then
+        state.preview_path = relative_path
+        pcall(vim.api.nvim_win_set_cursor, state.window, { line_number, 0 })
         break
       end
     end
   end
 
-  local opts = { buffer = state.buf, noremap = true, silent = true }
+  local keymap_options = { buffer = state.buffer, noremap = true, silent = true }
 
   vim.keymap.set("n", "<CR>", function()
     local file = current_file()
-    if not file then return end
-    -- A deleted file has no working-tree copy to open; show its diff instead.
-    if file.status == "D" then
-      if state.callbacks.on_diff then state.callbacks.on_diff(file.path) end
+    if not file then
       return
     end
-    if state.callbacks.on_select then
-      if state.main_win and vim.api.nvim_win_is_valid(state.main_win) then
-        vim.api.nvim_set_current_win(state.main_win)
+    -- Deleted files have no working-tree copy to open.
+    if file.status == "D" then
+      if state.callback_handlers.on_diff then
+        state.callback_handlers.on_diff(file.path)
       end
-      state.callbacks.on_select(file.path)
+      return
     end
-  end, opts)
+    if state.callback_handlers.on_select then
+      if state.main_window and vim.api.nvim_win_is_valid(state.main_window) then
+        vim.api.nvim_set_current_win(state.main_window)
+      end
+      state.callback_handlers.on_select(file.path)
+    end
+  end, keymap_options)
 
   vim.keymap.set("n", "d", function()
     local file = current_file()
-    if file and state.callbacks.on_diff then
-      state.callbacks.on_diff(file.path)
+    if file and state.callback_handlers.on_diff then
+      state.callback_handlers.on_diff(file.path)
     end
-  end, opts)
+  end, keymap_options)
 
   vim.keymap.set("n", "r", function()
     local file = current_file()
-    if not file then return end
-    local path = file.path
-    local now_reviewed = not state.reviewed[path]
-    if now_reviewed then
-      state.reviewed[path] = true
-    else
-      state.reviewed[path] = nil
+    if not file then
+      return
     end
-    if state.callbacks.on_reviewed then
-      state.callbacks.on_reviewed(path, now_reviewed)
+    local path = file.path
+    local is_now_reviewed = not state.reviewed_paths[path]
+    if is_now_reviewed then
+      state.reviewed_paths[path] = true
+    else
+      state.reviewed_paths[path] = nil
+    end
+    if state.callback_handlers.on_reviewed then
+      state.callback_handlers.on_reviewed(path, is_now_reviewed)
     end
     render()
-    -- restore cursor to the toggled path's new position after re-render
-    local buf_lines = vim.api.nvim_buf_get_lines(state.buf, 0, -1, false)
-    for i = 1, #buf_lines do
-      if state.line_files[i] and state.line_files[i].path == path then
-        pcall(vim.api.nvim_win_set_cursor, state.win, { i, 0 })
+    local buffer_lines = vim.api.nvim_buf_get_lines(state.buffer, 0, -1, false)
+    for line_number = 1, #buffer_lines do
+      if state.files_by_line[line_number] and state.files_by_line[line_number].path == path then
+        pcall(vim.api.nvim_win_set_cursor, state.window, { line_number, 0 })
         break
       end
     end
-  end, opts)
+  end, keymap_options)
 
-  vim.keymap.set("n", "q", function() M.close() end, opts)
+  vim.keymap.set("n", "q", function()
+    panel.close()
+  end, keymap_options)
   vim.keymap.set("n", "?", function()
-    vim.notify(
-      "Scout panel:\n<CR> open file  d diff  r toggle reviewed  q close",
-      vim.log.levels.INFO
-    )
-  end, opts)
+    vim.notify("Scout panel:\n<CR> open file  d diff  r toggle reviewed  q close", vim.log.levels.INFO)
+  end, keymap_options)
 
-  -- Auto-preview: hover a file → open it in main window and jump to first hunk.
-  -- Debounced so rapid cursor movement doesn't open every intermediate file.
-  -- Two-phase: edit immediately, defer hunk jump to let gitsigns attach async.
+  -- Debouncing avoids opening every file during rapid cursor movement.
   vim.api.nvim_create_autocmd("CursorMoved", {
-    buffer = state.buf,
+    buffer = state.buffer,
     callback = function()
       local file = current_file()
       if state.preview_timer then
         state.preview_timer:stop()
-        pcall(function() state.preview_timer:close() end)
+        pcall(function()
+          state.preview_timer:close()
+        end)
         state.preview_timer = nil
       end
-      if not file or file.status == "D" then return end
+      if not file or file.status == "D" then
+        return
+      end
       local path = file.path
-      local panel_buf = state.buf
-      local t = vim.uv.new_timer()
-      state.preview_timer = t
-      t:start(150, 0, vim.schedule_wrap(function()
-        if state.preview_timer == t then state.preview_timer = nil end
-        t:stop()
-        pcall(function() t:close() end)
+      local panel_buffer = state.buffer
+      local preview_timer = vim.uv.new_timer()
+      if not preview_timer then
+        return
+      end
+      state.preview_timer = preview_timer
+      preview_timer:start(
+        150,
+        0,
+        vim.schedule_wrap(function()
+          if state.preview_timer == preview_timer then
+            state.preview_timer = nil
+          end
+          preview_timer:stop()
+          pcall(function()
+            preview_timer:close()
+          end)
 
-        if state.buf ~= panel_buf then return end
-        if not (state.main_win and vim.api.nvim_win_is_valid(state.main_win)) then return end
-        if path == state.preview_path then return end
-        state.preview_path = path
+          if state.buffer ~= panel_buffer then
+            return
+          end
+          if not (state.main_window and vim.api.nvim_win_is_valid(state.main_window)) then
+            return
+          end
+          if path == state.preview_path then
+            return
+          end
+          state.preview_path = path
 
-        local abs = state.root .. "/" .. path
-        local cur_name = vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(state.main_win))
+          local absolute_path = state.repository_root .. "/" .. path
+          local current_buffer_name = vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(state.main_window))
 
-        -- Phase 1: open the file in main window without stealing panel focus
-        vim.api.nvim_win_call(state.main_win, function()
-          if cur_name ~= abs then
-            vim.cmd("edit " .. vim.fn.fnameescape(abs))
+          vim.api.nvim_win_call(state.main_window, function()
+            if current_buffer_name ~= absolute_path then
+              vim.cmd("edit " .. vim.fn.fnameescape(absolute_path))
+            end
+          end)
+
+          -- Direct cursor placement avoids gitsigns navigation firing after nvim_win_call exits.
+          local integration_enabled = state.callback_handlers.integration_enabled
+          local gitsigns_enabled = not integration_enabled or integration_enabled("gitsigns")
+          if gitsigns_enabled then
+            vim.defer_fn(function()
+              if not (state.main_window and vim.api.nvim_win_is_valid(state.main_window)) then
+                return
+              end
+              if state.preview_path ~= path then
+                return
+              end
+              local loaded, gitsigns = pcall(require, "gitsigns")
+              if not loaded or type(gitsigns.get_hunks) ~= "function" then
+                return
+              end
+              local buffer = vim.api.nvim_win_get_buf(state.main_window)
+              local hunks = gitsigns.get_hunks(buffer)
+              if not hunks or #hunks == 0 then
+                return
+              end
+              local first_hunk = hunks[1]
+              local line_number = (first_hunk.added and first_hunk.added.start > 0 and first_hunk.added.start)
+                or (first_hunk.removed and first_hunk.removed.start > 0 and first_hunk.removed.start)
+                or 1
+              local line_count = vim.api.nvim_buf_line_count(buffer)
+              line_number = math.max(1, math.min(line_number, line_count))
+              vim.api.nvim_win_set_cursor(state.main_window, { line_number, 0 })
+              vim.api.nvim_win_call(state.main_window, function()
+                vim.cmd("norm! zz")
+              end)
+            end, 80)
           end
         end)
-
-        -- Phase 2: jump to first hunk after gitsigns has had time to attach.
-        -- Uses get_hunks() (sync) + direct cursor set to avoid gitsigns' async
-        -- nav_hunk, which fires after nvim_win_call context is gone and errors.
-        local enabled = state.callbacks.integration_enabled
-        local use_gitsigns = not enabled or enabled("gitsigns")
-        if use_gitsigns then
-          vim.defer_fn(function()
-            if not (state.main_win and vim.api.nvim_win_is_valid(state.main_win)) then return end
-            if state.preview_path ~= path then return end
-            local ok, gs = pcall(require, "gitsigns")
-            if not ok or type(gs.get_hunks) ~= "function" then return end
-            local buf = vim.api.nvim_win_get_buf(state.main_win)
-            local hunks = gs.get_hunks(buf)
-            if not hunks or #hunks == 0 then return end
-            local h = hunks[1]
-            local lnum = (h.added and h.added.start > 0 and h.added.start)
-                      or (h.removed and h.removed.start > 0 and h.removed.start)
-                      or 1
-            local line_count = vim.api.nvim_buf_line_count(buf)
-            lnum = math.max(1, math.min(lnum, line_count))
-            vim.api.nvim_win_set_cursor(state.main_win, { lnum, 0 })
-            vim.api.nvim_win_call(state.main_win, function()
-              vim.cmd("norm! zz")
-            end)
-          end, 80)
-        end
-      end))
+      )
     end,
   })
 end
 
-function M.close()
+function panel.close()
   if state.preview_timer then
     state.preview_timer:stop()
-    pcall(function() state.preview_timer:close() end)
+    pcall(function()
+      state.preview_timer:close()
+    end)
     state.preview_timer = nil
   end
-  if state.win and vim.api.nvim_win_is_valid(state.win) then
-    vim.api.nvim_win_close(state.win, true)
+  if state.window and vim.api.nvim_win_is_valid(state.window) then
+    vim.api.nvim_win_close(state.window, true)
   end
-  state.win = nil
-  state.buf = nil
-  state.main_win = nil
+  state.window = nil
+  state.buffer = nil
+  state.main_window = nil
   state.preview_path = nil
-  state.root = nil
-  state.files = {}
-  state.line_files = {}
-  state.reviewed = {}
-  state.callbacks = {}
-  state.config = {}
+  state.repository_root = nil
+  state.changed_files = {}
+  state.files_by_line = {}
+  state.reviewed_paths = {}
+  state.callback_handlers = {}
+  state.configuration = {}
 end
 
-function M.is_open()
-  return state.buf ~= nil and vim.api.nvim_buf_is_valid(state.buf)
+function panel.is_open()
+  return state.buffer ~= nil and vim.api.nvim_buf_is_valid(state.buffer)
 end
 
-function M.focus()
-  if state.win and vim.api.nvim_win_is_valid(state.win) then
-    vim.api.nvim_set_current_win(state.win)
+function panel.focus()
+  if state.window and vim.api.nvim_win_is_valid(state.window) then
+    vim.api.nvim_set_current_win(state.window)
   end
 end
 
-return M
+return panel

@@ -1,21 +1,26 @@
-local M = {}
+local gutters = {}
 
-function M.activate(base_sha)
-  local ok, gs = pcall(require, "gitsigns")
-  if not ok then
-    vim.notify("scout: gitsigns not available — install lewis6991/gitsigns.nvim for hunk gutters", vim.log.levels.WARN)
+function gutters.activate(base_commit)
+  local loaded, gitsigns = pcall(require, "gitsigns")
+  if not loaded then
+    vim.notify(
+      "scout: gitsigns not available — install lewis6991/gitsigns.nvim for hunk gutters",
+      vim.log.levels.WARN
+    )
     return
   end
-  local ok2, err = pcall(gs.change_base, base_sha, true)
-  if not ok2 then
-    vim.notify("scout: change_base failed: " .. tostring(err), vim.log.levels.ERROR)
+  local changed_base, error_message = pcall(gitsigns.change_base, base_commit, true)
+  if not changed_base then
+    vim.notify("scout: change_base failed: " .. tostring(error_message), vim.log.levels.ERROR)
   end
 end
 
-function M.restore()
-  local ok, gs = pcall(require, "gitsigns")
-  if not ok then return end
-  pcall(gs.change_base, nil, true)
+function gutters.restore()
+  local loaded, gitsigns = pcall(require, "gitsigns")
+  if not loaded then
+    return
+  end
+  pcall(gitsigns.change_base, nil, true)
 end
 
-return M
+return gutters

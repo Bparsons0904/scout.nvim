@@ -1,13 +1,15 @@
-local M = {}
+local health = {}
 
-local function module_available(name)
-  if package.loaded[name] then return true end
-  local path = "lua/" .. name:gsub("%.", "/")
-  return #vim.api.nvim_get_runtime_file(path .. ".lua", false) > 0
-      or #vim.api.nvim_get_runtime_file(path .. "/init.lua", false) > 0
+local function module_available(module_name)
+  if package.loaded[module_name] then
+    return true
+  end
+  local module_path = "lua/" .. module_name:gsub("%.", "/")
+  return #vim.api.nvim_get_runtime_file(module_path .. ".lua", false) > 0
+    or #vim.api.nvim_get_runtime_file(module_path .. "/init.lua", false) > 0
 end
 
-function M.check()
+function health.check()
   vim.health.start("scout.nvim")
 
   if vim.fn.executable("git") == 1 then
@@ -25,4 +27,4 @@ function M.check()
   end
 end
 
-return M
+return health

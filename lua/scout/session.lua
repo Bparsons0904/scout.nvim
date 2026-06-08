@@ -1,69 +1,81 @@
-local M = {}
+local session = {}
 
 local git = require("scout.git")
-local persist = require("scout.persist")
+local persistence = require("scout.persist")
 local gutters = require("scout.gutters")
 local panel = require("scout.panel")
 local diff = require("scout.diff")
 
-local active = nil
-local _config = {}
+---@class ScoutSession
+---@field base_reference string
+---@field base_commit string
+---@field changed_files table[]
+---@field reviewed_paths table<string, boolean>
+---@field persistence_key string
+---@field repository_root string
+---@field head_commit string
 
--- An integration is on unless the user explicitly set it to false.
-function M.integration_enabled(name)
-  return not _config.integrations or _config.integrations[name] ~= false
+---@type ScoutSession?
+local active_session = nil
+local configuration = {}
+
+function session.integration_enabled(name)
+  return not configuration.integrations or configuration.integrations[name] ~= false
 end
 
--- Exposed (underscore-prefixed) for unit testing; not part of the public API.
-function M._make_key(root, branch, base_ref, base_sha, head_sha)
-  return table.concat({ root, branch, base_ref, base_sha, head_sha }, "|")
+function session._make_key(repository_root, branch, base_reference, base_commit, head_commit)
+  return table.concat({ repository_root, branch, base_reference, base_commit, head_commit }, "|")
 end
 
 local function persist_reviewed()
-  if not active then return end
-  local list = {}
-  for path in pairs(active.reviewed) do
-    table.insert(list, path)
+  if not active_session then
+    return
   end
-  persist.save(active.key, { reviewed = list })
+  local reviewed_paths = {}
+  for path in pairs(active_session.reviewed_paths) do
+    table.insert(reviewed_paths, path)
+  end
+  persistence.save(active_session.persistence_key, { reviewed = reviewed_paths })
 end
 
-function M.set_config(cfg)
-  _config = cfg or {}
+function session.set_config(new_configuration)
+  configuration = new_configuration or {}
 end
 
--- Opens the panel for the current `active` session, wiring its callbacks.
--- Shared by a fresh start and by reopening the panel after it was closed.
 local function open_panel()
-  panel.open(active.files, active.reviewed, {
-    integration_enabled = M.integration_enabled,
+  local current = active_session
+  if not current then
+    return
+  end
+  panel.open(current.changed_files, current.reviewed_paths, {
+    integration_enabled = session.integration_enabled,
     on_select = function(path)
-      vim.cmd("edit " .. vim.fn.fnameescape(active.root .. "/" .. path))
+      vim.cmd("edit " .. vim.fn.fnameescape(current.repository_root .. "/" .. path))
     end,
     on_diff = function(path)
-      if M.integration_enabled("diffview") then
-        diff.open_file(active.base_sha, path, panel.focus)
+      if session.integration_enabled("diffview") then
+        diff.open_file(current.base_commit, path, panel.focus)
       end
     end,
     on_reviewed = function(path, is_reviewed)
       if is_reviewed then
-        active.reviewed[path] = true
+        current.reviewed_paths[path] = true
       else
-        active.reviewed[path] = nil
+        current.reviewed_paths[path] = nil
       end
       persist_reviewed()
     end,
-  }, _config, active.root)
+  }, configuration, current.repository_root)
 end
 
-function M.start(base_override)
-  if active then
-    -- A session is already running. Closing the panel with `q` keeps the
-    -- session alive, so re-running start just reopens (or focuses) the panel
-    -- rather than erroring. Switching to a different base must quit first.
-    if base_override and base_override ~= active.base_ref then
+function session.start(base_reference_override)
+  if active_session then
+    -- Closing the panel intentionally keeps the review session alive.
+    if base_reference_override and base_reference_override ~= active_session.base_reference then
       vim.notify(
-        "scout: already reviewing " .. active.base_ref .. " — use <leader>rq to exit before switching base",
+        "scout: already reviewing "
+          .. active_session.base_reference
+          .. " — use <leader>rq to exit before switching base",
         vim.log.levels.WARN
       )
       return
@@ -76,35 +88,38 @@ function M.start(base_override)
     return
   end
 
-  local base_ref = base_override or git.default_branch()
-  if not base_ref then
+  local base_reference = base_reference_override or git.default_branch()
+  if not base_reference then
     vim.notify("scout: could not determine default branch", vim.log.levels.ERROR)
     return
   end
 
-  local base_sha = git.merge_base(base_ref)
-  if not base_sha then
-    vim.notify("scout: could not compute merge-base with " .. base_ref, vim.log.levels.ERROR)
+  local base_commit = git.merge_base(base_reference)
+  if not base_commit then
+    vim.notify("scout: could not compute merge-base with " .. base_reference, vim.log.levels.ERROR)
     return
   end
 
-  local files, files_err = git.changed_files(base_sha)
-  if not files then
-    vim.notify("scout: could not list changed files: " .. (files_err or "unknown Git error"), vim.log.levels.ERROR)
+  local changed_files, changed_files_error = git.changed_files(base_commit)
+  if not changed_files then
+    vim.notify(
+      "scout: could not list changed files: " .. (changed_files_error or "unknown Git error"),
+      vim.log.levels.ERROR
+    )
     return
   end
-  if #files == 0 then
-    vim.notify("scout: no changes vs " .. base_ref, vim.log.levels.INFO)
+  if #changed_files == 0 then
+    vim.notify("scout: no changes vs " .. base_reference, vim.log.levels.INFO)
     return
   end
 
-  local root = git.root()
-  if not root then
+  local repository_root = git.root()
+  if not repository_root then
     vim.notify("scout: could not determine repository root", vim.log.levels.ERROR)
     return
   end
-  local head_sha = git.head()
-  if not head_sha then
+  local head_commit = git.head()
+  if not head_commit then
     vim.notify("scout: could not determine current HEAD", vim.log.levels.ERROR)
     return
   end
@@ -113,59 +128,61 @@ function M.start(base_override)
     vim.notify("scout: could not determine current branch", vim.log.levels.ERROR)
     return
   end
-  local key = M._make_key(root, branch, base_ref, base_sha, head_sha)
-  local saved = persist.load(key)
-  local reviewed = {}
-  for _, path in ipairs(saved.reviewed or {}) do
-    reviewed[path] = true
+  local persistence_key = session._make_key(repository_root, branch, base_reference, base_commit, head_commit)
+  local saved_state = persistence.load(persistence_key)
+  local reviewed_paths = {}
+  for _, path in ipairs(saved_state.reviewed or {}) do
+    reviewed_paths[path] = true
   end
 
-  active = {
-    base_ref = base_ref,
-    base_sha = base_sha,
-    files = files,
-    reviewed = reviewed,
-    key = key,
-    root = root,
-    head_sha = head_sha,
+  active_session = {
+    base_reference = base_reference,
+    base_commit = base_commit,
+    changed_files = changed_files,
+    reviewed_paths = reviewed_paths,
+    persistence_key = persistence_key,
+    repository_root = repository_root,
+    head_commit = head_commit,
   }
 
-  if M.integration_enabled("gitsigns") then
-    gutters.activate(base_sha)
+  if session.integration_enabled("gitsigns") then
+    gutters.activate(base_commit)
   end
 
   open_panel()
 
-  local done = 0
-  for _ in pairs(reviewed) do done = done + 1 end
+  local reviewed_count = 0
+  for _ in pairs(reviewed_paths) do
+    reviewed_count = reviewed_count + 1
+  end
   vim.notify(
     string.format(
       "scout: %s (%s) — %d files, %d reviewed",
-      base_ref,
-      base_sha:sub(1, 7),
-      #files,
-      done
+      base_reference,
+      base_commit:sub(1, 7),
+      #changed_files,
+      reviewed_count
     ),
     vim.log.levels.INFO
   )
 end
 
-function M.stop()
-  if not active then
+function session.stop()
+  if not active_session then
     vim.notify("scout: no active session", vim.log.levels.INFO)
     return
   end
   diff.close(false)
   panel.close()
-  if M.integration_enabled("gitsigns") then
+  if session.integration_enabled("gitsigns") then
     gutters.restore()
   end
-  active = nil
+  active_session = nil
   vim.notify("scout: exited", vim.log.levels.INFO)
 end
 
-function M.is_active()
-  return active ~= nil
+function session.is_active()
+  return active_session ~= nil
 end
 
-return M
+return session

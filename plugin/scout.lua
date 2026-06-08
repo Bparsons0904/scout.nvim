@@ -1,1 +1,0 @@
--- intentionally minimal — call require("scout").setup() or configure via lazy opts
