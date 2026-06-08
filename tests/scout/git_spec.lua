@@ -21,6 +21,11 @@ describe("git.parse_name_status", function()
     assert.same({ { status = "R", path = "new.lua" } }, result)
   end)
 
+  it("parses a typechange", function()
+    local result = git.parse_name_status("T\0script.sh\0")
+    assert.same({ { status = "T", path = "script.sh" } }, result)
+  end)
+
   it("parses multiple files", function()
     local result = git.parse_name_status("M\0a.lua\0A\0b.lua\0D\0c.lua\0")
     assert.equals(3, #result)
@@ -37,6 +42,22 @@ describe("git.parse_name_status", function()
   it("preserves tabs and newlines in paths", function()
     local path = "dir/a\tb\nc.lua"
     assert.same({ { status = "M", path = path } }, git.parse_name_status("M\0" .. path .. "\0"))
+  end)
+end)
+
+describe("git commands", function()
+  it("returns nil and an error outside a git repository", function()
+    local previous = vim.fn.getcwd()
+    local tmp = vim.fn.tempname()
+    vim.fn.mkdir(tmp, "p")
+    vim.cmd.cd(tmp)
+
+    local root, err = git.root()
+
+    vim.cmd.cd(previous)
+    vim.fn.delete(tmp, "rf")
+    assert.is_nil(root)
+    assert.is_string(err)
   end)
 end)
 

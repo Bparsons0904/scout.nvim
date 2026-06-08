@@ -83,15 +83,16 @@ function M.setup(opts)
   end, {
     nargs = "?",
     desc = "Start branch review (optional base branch arg)",
+    force = true,
   })
 
   vim.api.nvim_create_user_command("ScoutQuit", function()
     session.stop()
-  end, { desc = "Exit branch review mode" })
+  end, { desc = "Exit branch review mode", force = true })
 
   vim.api.nvim_create_user_command("ScoutDiffClose", function()
     require("scout.diff").close()
-  end, { desc = "Close Scout diff and return to the panel" })
+  end, { desc = "Close Scout diff and return to the panel", force = true })
 end
 
 return M

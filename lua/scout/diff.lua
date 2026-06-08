@@ -61,7 +61,7 @@ function M.close(return_to_source)
 
   if vim.api.nvim_tabpage_is_valid(closing.tab) then
     vim.api.nvim_set_current_tabpage(closing.tab)
-    vim.cmd("DiffviewClose")
+    pcall(vim.cmd, "DiffviewClose")
   end
 
   if return_to_source ~= false and vim.api.nvim_tabpage_is_valid(closing.source_tab) then

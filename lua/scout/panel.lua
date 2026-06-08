@@ -10,6 +10,7 @@ local STATUS_HL = {
   M = "ScoutStatusModified",
   D = "ScoutStatusDeleted",
   R = "ScoutStatusRenamed",
+  T = "ScoutStatusTypeChanged",
 }
 
 local function setup_highlights()
@@ -20,9 +21,16 @@ local function setup_highlights()
   set("ScoutStatusModified", "Changed")
   set("ScoutStatusDeleted", "Removed")
   set("ScoutStatusRenamed", "Changed")
+  set("ScoutStatusTypeChanged", "Changed")
   set("ScoutAdded", "Added")
   set("ScoutDeleted", "Removed")
 end
+
+local highlight_group = vim.api.nvim_create_augroup("scout_panel_highlights", { clear = true })
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group = highlight_group,
+  callback = setup_highlights,
+})
 
 local state = {
   buf = nil,
@@ -45,6 +53,7 @@ local function render()
   local lines = {}
   local line_files = {}
   local unreviewed, done = {}, {}
+  local separator_idx = nil
 
   for _, f in ipairs(state.files) do
     if state.reviewed[f.path] then
@@ -68,6 +77,7 @@ local function render()
     table.insert(line_files, false)
     table.insert(lines, "── reviewed ─────────────────────────")
     table.insert(line_files, false)
+    separator_idx = #lines
     for _, f in ipairs(done) do
       -- "✓ " is the 3-byte UTF-8 ✓ plus a space, so the status letter is at col 4.
       table.insert(lines, string.format("\xE2\x9C\x93 %s  %s", f.status, vim.fn.strtrans(f.path)))
@@ -81,13 +91,9 @@ local function render()
   vim.bo[state.buf].modifiable = false
 
   vim.api.nvim_buf_clear_namespace(state.buf, ns, 0, -1)
-  local separator_idx = nil
-  for i, l in ipairs(lines) do
-    if l:match("^\xe2\x94\x80\xe2\x94\x80") then separator_idx = i break end
-  end
   if separator_idx then
     for i = separator_idx, #lines do
-      vim.hl.range(state.buf, ns, "Comment", { i - 1, 0 }, { i - 1, -1 })
+      vim.api.nvim_buf_add_highlight(state.buf, ns, "Comment", i - 1, 0, -1)
     end
   end
 
@@ -95,7 +101,7 @@ local function render()
   for _, m in ipairs(marks) do
     local hl = STATUS_HL[m.file.status]
     if hl then
-      vim.hl.range(state.buf, ns, hl, { m.line, m.status_col }, { m.line, m.status_col + 1 })
+      vim.api.nvim_buf_add_highlight(state.buf, ns, hl, m.line, m.status_col, m.status_col + 1)
     end
     local virt = {}
     if m.file.added then
@@ -119,7 +125,7 @@ end
 -- "  M  path" (unreviewed) and "\xE2\x9C\x93 M  path" (reviewed; ✓ = 3 UTF-8
 -- bytes). Returns nil for non-file lines (blank, separator). Exposed for tests.
 function M.path_from_line(line)
-  local status, path = line:match("^.-%s+([AMDR])%s+(.+)$")
+  local status, path = line:match("^.-%s+([ADMRT])%s+(.+)$")
   return path, status
 end
 
@@ -276,13 +282,14 @@ function M.open(files, reviewed, callbacks, config, root)
         -- Phase 2: jump to first hunk after gitsigns has had time to attach.
         -- Uses get_hunks() (sync) + direct cursor set to avoid gitsigns' async
         -- nav_hunk, which fires after nvim_win_call context is gone and errors.
-        local use_gitsigns = not state.config.integrations or state.config.integrations.gitsigns ~= false
+        local enabled = state.callbacks.integration_enabled
+        local use_gitsigns = not enabled or enabled("gitsigns")
         if use_gitsigns then
           vim.defer_fn(function()
             if not (state.main_win and vim.api.nvim_win_is_valid(state.main_win)) then return end
             if state.preview_path ~= path then return end
             local ok, gs = pcall(require, "gitsigns")
-            if not ok then return end
+            if not ok or type(gs.get_hunks) ~= "function" then return end
             local buf = vim.api.nvim_win_get_buf(state.main_win)
             local hunks = gs.get_hunks(buf)
             if not hunks or #hunks == 0 then return end

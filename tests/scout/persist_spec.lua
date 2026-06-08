@@ -24,6 +24,14 @@ describe("persist", function()
     assert.same({ reviewed = { "a.lua", "b.lua" } }, loaded)
   end)
 
+  it("replaces existing state", function()
+    local key = "repo|branch|origin/main|abc123"
+    persist.save(key, { reviewed = { "old.lua" } })
+    persist.save(key, { reviewed = { "new.lua" } })
+
+    assert.same({ reviewed = { "new.lua" } }, persist.load(key))
+  end)
+
   it("returns an empty table when no state exists", function()
     assert.same({}, persist.load("does|not|exist"))
   end)

@@ -4,7 +4,7 @@ Structured branch review mode for Neovim. Scout gives you a file panel for the c
 
 ## Features
 
-- Side panel listing all changed files (M/A/D/R) split into unreviewed / reviewed sections, with color-coded status letters and per-file +added/-deleted line counts
+- Side panel listing all changed files split into unreviewed / reviewed sections, with color-coded status letters and per-file +added/-deleted line counts
 - Mark files as reviewed with `r`; progress persists across restarts until the branch receives a new commit
 - Auto-preview: hovering a file opens it in the main window and, with gitsigns enabled, jumps to the first changed hunk
 - `d` opens a full side-by-side diff via diffview.nvim
@@ -13,6 +13,8 @@ Structured branch review mode for Neovim. Scout gives you a file panel for the c
 - All integrations are optional and degrade gracefully
 
 ## Installation
+
+Requires Neovim 0.10+ and Git.
 
 ```lua
 -- lazy.nvim
@@ -72,8 +74,10 @@ Set a keymap to `false` to disable it.
 ✓ D  src/old-file.js                           -41
 ```
 
-The status letter is color-coded (A green, M/R orange, D red) and each file
+The status letter is color-coded (A green, M/R/T orange, D red) and each file
 shows its added/deleted line counts, right-aligned.
+
+Run `:checkhealth scout` to verify Git and optional integrations.
 
 ## Recommended diffview.nvim settings
 

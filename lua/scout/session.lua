@@ -19,11 +19,6 @@ function M._make_key(root, branch, base_ref, base_sha, head_sha)
   return table.concat({ root, branch, base_ref, base_sha, head_sha }, "|")
 end
 
-local function current_branch()
-  local branch = vim.fn.system("git rev-parse --abbrev-ref HEAD 2>/dev/null"):gsub("[\n\r]", "")
-  return branch
-end
-
 local function persist_reviewed()
   if not active then return end
   local list = {}
@@ -41,6 +36,7 @@ end
 -- Shared by a fresh start and by reopening the panel after it was closed.
 local function open_panel()
   panel.open(active.files, active.reviewed, {
+    integration_enabled = M.integration_enabled,
     on_select = function(path)
       vim.cmd("edit " .. vim.fn.fnameescape(active.root .. "/" .. path))
     end,
@@ -92,19 +88,32 @@ function M.start(base_override)
     return
   end
 
-  local files = git.changed_files(base_sha)
+  local files, files_err = git.changed_files(base_sha)
+  if not files then
+    vim.notify("scout: could not list changed files: " .. (files_err or "unknown Git error"), vim.log.levels.ERROR)
+    return
+  end
   if #files == 0 then
     vim.notify("scout: no changes vs " .. base_ref, vim.log.levels.INFO)
     return
   end
 
   local root = git.root()
+  if not root then
+    vim.notify("scout: could not determine repository root", vim.log.levels.ERROR)
+    return
+  end
   local head_sha = git.head()
   if not head_sha then
     vim.notify("scout: could not determine current HEAD", vim.log.levels.ERROR)
     return
   end
-  local key = M._make_key(root, current_branch(), base_ref, base_sha, head_sha)
+  local branch = git.current_branch()
+  if not branch then
+    vim.notify("scout: could not determine current branch", vim.log.levels.ERROR)
+    return
+  end
+  local key = M._make_key(root, branch, base_ref, base_sha, head_sha)
   local saved = persist.load(key)
   local reviewed = {}
   for _, path in ipairs(saved.reviewed or {}) do

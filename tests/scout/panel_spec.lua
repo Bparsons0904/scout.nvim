@@ -14,7 +14,7 @@ describe("panel.path_from_line", function()
   end)
 
   it("parses each status letter", function()
-    for _, s in ipairs({ "A", "D", "R" }) do
+    for _, s in ipairs({ "A", "D", "R", "T" }) do
       local path, status = panel.path_from_line("  " .. s .. "  a/b.lua")
       assert.equals("a/b.lua", path)
       assert.equals(s, status)
@@ -46,8 +46,8 @@ describe("panel rendering", function()
     panel.open(
       { { status = "M", path = "dir/a\tb\nc.lua" } },
       {},
+      { integration_enabled = function() return false end },
       {},
-      { integrations = { gitsigns = false } },
       vim.fn.getcwd()
     )
 
@@ -67,8 +67,8 @@ describe("panel rendering", function()
         { status = "M", path = "doc/scout.txt" },
       },
       {},
+      { integration_enabled = function() return false end },
       {},
-      { integrations = { gitsigns = false } },
       vim.fn.getcwd()
     )
 

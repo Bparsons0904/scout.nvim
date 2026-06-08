@@ -7,12 +7,15 @@ Scout is a structured branch review tool for Neovim. It shows changed files
 in a side panel, lets you open/diff each one, tracks which files you've
 reviewed, and persists that progress across editor restarts.
 
+Requires Neovim 0.10+ and Git. Run `:checkhealth scout` to verify Git and
+optional integrations.
+
 ==============================================================================
 INSTALLATION                                                    *scout-install*
 
 Via lazy.nvim: >lua
   {
-    "bobparsons/scout.nvim",
+    url = "https://git.bobparsons.dev/deadstyle/scout.nvim",
     dependencies = {
       "lewis6991/gitsigns.nvim",        -- optional: hunk gutters
       "sindrets/diffview.nvim",         -- optional: side-by-side diff
@@ -92,10 +95,10 @@ FEATURES                                                        *scout-features*
 File display ~
   Each panel line shows the status letter and path, plus right-aligned
   +added/-deleted line counts. The status letter is color-coded: A green,
-  M/R orange, D red. Counts are omitted for binary files. The highlight
+  M/R/T orange, D red. Counts are omitted for binary files. The highlight
   groups (`ScoutStatusAdded`, `ScoutStatusModified`, `ScoutStatusDeleted`,
-  `ScoutStatusRenamed`, `ScoutAdded`, `ScoutDeleted`) link to the standard
-  diff groups by default and can be overridden.
+  `ScoutStatusRenamed`, `ScoutStatusTypeChanged`, `ScoutAdded`, `ScoutDeleted`)
+  link to the standard diff groups by default and can be overridden.
 
 Auto-preview ~
   Moving the cursor over a file in the panel automatically opens it in the
