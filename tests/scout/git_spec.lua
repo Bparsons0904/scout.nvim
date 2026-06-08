@@ -59,6 +59,37 @@ describe("git commands", function()
     assert.is_nil(root)
     assert.is_string(err)
   end)
+
+  it("runs against an explicit repository when cwd is elsewhere", function()
+    local repository_root = assert(git.root())
+    local expected_head = assert(git.head(repository_root))
+    local previous = vim.fn.getcwd()
+    local tmp = vim.fn.tempname()
+    vim.fn.mkdir(tmp, "p")
+    vim.cmd.cd(tmp)
+
+    local actual_root = git.root(repository_root)
+    local actual_head = git.head(repository_root)
+
+    vim.cmd.cd(previous)
+    vim.fn.delete(tmp, "rf")
+    assert.equals(repository_root, actual_root)
+    assert.equals(expected_head, actual_head)
+  end)
+
+  it("resolves a repository from a file path when cwd is elsewhere", function()
+    local repository_root = assert(git.root())
+    local previous = vim.fn.getcwd()
+    local tmp = vim.fn.tempname()
+    vim.fn.mkdir(tmp, "p")
+    vim.cmd.cd(tmp)
+
+    local actual_root = git.root_for_path(repository_root .. "/README.md")
+
+    vim.cmd.cd(previous)
+    vim.fn.delete(tmp, "rf")
+    assert.equals(repository_root, actual_root)
+  end)
 end)
 
 describe("git.parse_numstat", function()

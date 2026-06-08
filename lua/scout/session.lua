@@ -54,7 +54,7 @@ local function open_panel()
     end,
     on_diff = function(path)
       if session.integration_enabled("diffview") then
-        diff.open_file(current.base_commit, path, panel.focus)
+        diff.open_file(current.base_commit, path, current.repository_root, panel.focus)
       end
     end,
     on_reviewed = function(path, is_reviewed)
@@ -88,19 +88,25 @@ function session.start(base_reference_override)
     return
   end
 
-  local base_reference = base_reference_override or git.default_branch()
+  local repository_root = git.root_for_path(vim.api.nvim_buf_get_name(0))
+  if not repository_root then
+    vim.notify("scout: could not determine repository root", vim.log.levels.ERROR)
+    return
+  end
+
+  local base_reference = base_reference_override or git.default_branch(repository_root)
   if not base_reference then
     vim.notify("scout: could not determine default branch", vim.log.levels.ERROR)
     return
   end
 
-  local base_commit = git.merge_base(base_reference)
+  local base_commit = git.merge_base(base_reference, repository_root)
   if not base_commit then
     vim.notify("scout: could not compute merge-base with " .. base_reference, vim.log.levels.ERROR)
     return
   end
 
-  local changed_files, changed_files_error = git.changed_files(base_commit)
+  local changed_files, changed_files_error = git.changed_files(base_commit, repository_root)
   if not changed_files then
     vim.notify(
       "scout: could not list changed files: " .. (changed_files_error or "unknown Git error"),
@@ -113,17 +119,12 @@ function session.start(base_reference_override)
     return
   end
 
-  local repository_root = git.root()
-  if not repository_root then
-    vim.notify("scout: could not determine repository root", vim.log.levels.ERROR)
-    return
-  end
-  local head_commit = git.head()
+  local head_commit = git.head(repository_root)
   if not head_commit then
     vim.notify("scout: could not determine current HEAD", vim.log.levels.ERROR)
     return
   end
-  local branch = git.current_branch()
+  local branch = git.current_branch(repository_root)
   if not branch then
     vim.notify("scout: could not determine current branch", vim.log.levels.ERROR)
     return

@@ -18,8 +18,17 @@ local function trim_newlines(value)
   return value:gsub("[\r\n]+$", "")
 end
 
-local function run(arguments)
-  local command_result = vim.system(arguments, { text = true }):wait()
+local function command(arguments, repository_root)
+  local result = { "git" }
+  if repository_root then
+    vim.list_extend(result, { "-C", repository_root })
+  end
+  vim.list_extend(result, arguments)
+  return result
+end
+
+local function run(arguments, repository_root)
+  local command_result = vim.system(command(arguments, repository_root), { text = true }):wait()
   if command_result.code ~= 0 then
     return nil, trim_newlines(command_result.stderr or "")
   end
@@ -80,20 +89,31 @@ function git.parse_numstat(output)
   return statistics
 end
 
-function git.root()
-  return run({ "git", "rev-parse", "--show-toplevel" })
+function git.root(start_directory)
+  return run({ "rev-parse", "--show-toplevel" }, start_directory)
 end
 
-function git.head()
-  return run({ "git", "rev-parse", "HEAD" })
+function git.root_for_path(path)
+  if path and path ~= "" then
+    local start_directory = vim.fn.isdirectory(path) == 1 and path or vim.fs.dirname(path)
+    local repository_root = git.root(start_directory)
+    if repository_root then
+      return repository_root
+    end
+  end
+  return git.root()
 end
 
-function git.current_branch()
-  return run({ "git", "rev-parse", "--abbrev-ref", "HEAD" })
+function git.head(repository_root)
+  return run({ "rev-parse", "HEAD" }, repository_root)
 end
 
-function git.default_branch()
-  local reference = run({ "git", "symbolic-ref", "refs/remotes/origin/HEAD" })
+function git.current_branch(repository_root)
+  return run({ "rev-parse", "--abbrev-ref", "HEAD" }, repository_root)
+end
+
+function git.default_branch(repository_root)
+  local reference = run({ "symbolic-ref", "refs/remotes/origin/HEAD" }, repository_root)
   if reference then
     local short_reference = reference:match("refs/remotes/(.+)$")
     if short_reference then
@@ -101,20 +121,23 @@ function git.default_branch()
     end
   end
   for _, candidate in ipairs({ "origin/main", "origin/master", "main", "master" }) do
-    if run({ "git", "rev-parse", "--verify", candidate }) then
+    if run({ "rev-parse", "--verify", candidate }, repository_root) then
       return candidate
     end
   end
   return nil
 end
 
-function git.merge_base(base_reference)
-  return run({ "git", "merge-base", base_reference, "HEAD" })
+function git.merge_base(base_reference, repository_root)
+  return run({ "merge-base", base_reference, "HEAD" }, repository_root)
 end
 
-function git.changed_files(base_commit)
+function git.changed_files(base_commit, repository_root)
   local name_status_result = vim
-    .system({ "git", "diff", "--no-ext-diff", "--name-status", "-z", base_commit, "HEAD", "--" }, { text = false })
+    .system(
+      command({ "diff", "--no-ext-diff", "--name-status", "-z", base_commit, "HEAD", "--" }, repository_root),
+      { text = false }
+    )
     :wait()
   if name_status_result.code ~= 0 then
     return nil, trim_newlines(name_status_result.stderr or "")
@@ -122,7 +145,10 @@ function git.changed_files(base_commit)
   local changed_files = git.parse_name_status(name_status_result.stdout or "")
 
   local numstat_result = vim
-    .system({ "git", "diff", "--no-ext-diff", "--numstat", "-z", base_commit, "HEAD", "--" }, { text = false })
+    .system(
+      command({ "diff", "--no-ext-diff", "--numstat", "-z", base_commit, "HEAD", "--" }, repository_root),
+      { text = false }
+    )
     :wait()
   if numstat_result.code == 0 then
     local statistics = git.parse_numstat(numstat_result.stdout or "")

@@ -20,7 +20,7 @@ local function map_tabpage(tabpage)
   end
 end
 
-function diff.open_file(base_commit, file_path, on_close)
+function diff.open_file(base_commit, file_path, repository_root, on_close)
   if not pcall(require, "diffview") then
     vim.notify(
       "scout: diffview.nvim not available — install sindrets/diffview.nvim for side-by-side diffs",
@@ -32,7 +32,14 @@ function diff.open_file(base_commit, file_path, on_close)
   diff.close(false)
   local source_tabpage = vim.api.nvim_get_current_tabpage()
   local opened, error_message = pcall(function()
-    vim.cmd("DiffviewOpen " .. vim.fn.shellescape(base_commit) .. "...HEAD -- " .. vim.fn.fnameescape(file_path))
+    vim.cmd(
+      "DiffviewOpen "
+        .. vim.fn.fnameescape("-C" .. repository_root)
+        .. " "
+        .. base_commit
+        .. "...HEAD -- "
+        .. vim.fn.fnameescape(file_path)
+    )
   end)
   if not opened then
     vim.notify("scout: could not open diffview: " .. tostring(error_message), vim.log.levels.ERROR)

@@ -30,12 +30,15 @@ function scout._deep_merge(base, override)
 end
 
 local function start_branch_picker()
+  local repository_root = require("scout.git").root_for_path(vim.api.nvim_buf_get_name(0))
+
   if require("scout.session").integration_enabled("telescope") then
     local builtin_loaded, telescope_builtin = pcall(require, "telescope.builtin")
     local actions_loaded, telescope_actions = pcall(require, "telescope.actions")
     local action_state_loaded, telescope_action_state = pcall(require, "telescope.actions.state")
     if builtin_loaded and actions_loaded and action_state_loaded then
       telescope_builtin.git_branches({
+        cwd = repository_root,
         attach_mappings = function(prompt_buffer, set_mapping)
           local function select_branch()
             local selection = telescope_action_state.get_selected_entry()

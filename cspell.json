@@ -34,7 +34,11 @@
     "noremap",
     "lnum",
     "stdpath",
-    "sysname"
+    "sysname",
+    "autocommand",
+    "isdirectory",
+    "botright",
+    "checkhealth"
   ],
   "ignorePaths": [
     "node_modules/**",

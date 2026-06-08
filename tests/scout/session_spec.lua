@@ -20,6 +20,7 @@ describe("session.start failures", function()
       merge_base = git.merge_base,
       changed_files = git.changed_files,
       root = git.root,
+      root_for_path = git.root_for_path,
       notify = vim.notify,
     }
     notifications = {}
@@ -28,6 +29,7 @@ describe("session.start failures", function()
     end
     git.default_branch = function() return "main" end
     git.merge_base = function() return "base-sha" end
+    git.root_for_path = function() return "/repo" end
   end)
 
   after_each(function()
@@ -35,6 +37,7 @@ describe("session.start failures", function()
     git.merge_base = originals.merge_base
     git.changed_files = originals.changed_files
     git.root = originals.root
+    git.root_for_path = originals.root_for_path
     vim.notify = originals.notify
   end)
 
@@ -50,7 +53,7 @@ describe("session.start failures", function()
 
   it("rejects an unavailable repository root", function()
     git.changed_files = function() return { { status = "M", path = "README.md" } } end
-    git.root = function() return nil, "not a repository" end
+    git.root_for_path = function() return nil, "not a repository" end
 
     session.start()
 
