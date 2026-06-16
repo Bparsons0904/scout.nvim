@@ -15,6 +15,7 @@ local defaults = {
     diffview = true,
     telescope = true,
   },
+  exclude = {},
 }
 
 function scout._deep_merge(base, override)
@@ -62,29 +63,41 @@ local function start_branch_picker()
   end)
 end
 
+local registered_lhs = {}
+
 function scout.setup(options)
   local configuration = scout._deep_merge(defaults, options or {})
   local session = require("scout.session")
   session.set_config(configuration)
 
+  for _, lhs in ipairs(registered_lhs) do
+    pcall(vim.keymap.del, "n", lhs)
+  end
+  registered_lhs = {}
+
   local keymaps = configuration.keys or {}
 
+  local function register_key(lhs, callback, desc)
+    vim.keymap.set("n", lhs, callback, { desc = desc })
+    registered_lhs[#registered_lhs + 1] = lhs
+  end
+
   if keymaps.start then
-    vim.keymap.set("n", keymaps.start, function()
+    register_key(keymaps.start, function()
       session.start()
-    end, { desc = "Scout: start review (auto base)" })
+    end, "Scout: start review (auto base)")
   end
 
   if keymaps.start_pick then
-    vim.keymap.set("n", keymaps.start_pick, function()
+    register_key(keymaps.start_pick, function()
       start_branch_picker()
-    end, { desc = "Scout: start review (pick base branch)" })
+    end, "Scout: start review (pick base branch)")
   end
 
   if keymaps.quit then
-    vim.keymap.set("n", keymaps.quit, function()
+    register_key(keymaps.quit, function()
       session.stop()
-    end, { desc = "Scout: exit review" })
+    end, "Scout: exit review")
   end
 
   vim.api.nvim_create_user_command("Scout", function(command)
@@ -98,6 +111,10 @@ function scout.setup(options)
   vim.api.nvim_create_user_command("ScoutQuit", function()
     session.stop()
   end, { desc = "Exit branch review mode", force = true })
+
+  vim.api.nvim_create_user_command("ScoutRefresh", function()
+    session.refresh()
+  end, { desc = "Re-scan changed files for the active review", force = true })
 
   vim.api.nvim_create_user_command("ScoutDiffClose", function()
     require("scout.diff").close()

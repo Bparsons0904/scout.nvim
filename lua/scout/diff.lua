@@ -4,6 +4,17 @@ local active_diff = nil
 local autocommand_group = vim.api.nvim_create_augroup("scout_diffview", { clear = true })
 
 local function map_close(buffer)
+  if not vim.api.nvim_buf_is_valid(buffer) then
+    return
+  end
+  -- Record every buffer touched so diff.close() can remove the mapping again
+  -- otherwise `q` leaks onto regular files opened inside the diff tab.
+  if active_diff then
+    if active_diff.mapped_buffers[buffer] then
+      return
+    end
+    active_diff.mapped_buffers[buffer] = true
+  end
   vim.keymap.set("n", "q", function()
     diff.close()
   end, {
@@ -51,7 +62,7 @@ function diff.open_file(base_commit, file_path, repository_root, on_close)
     vim.notify("scout: diffview did not open a new tab", vim.log.levels.ERROR)
     return
   end
-  active_diff = { tabpage = diff_tabpage, source_tabpage = source_tabpage, on_close = on_close }
+  active_diff = { tabpage = diff_tabpage, source_tabpage = source_tabpage, on_close = on_close, mapped_buffers = {} }
 
   map_tabpage(diff_tabpage)
   vim.api.nvim_create_autocmd("BufWinEnter", {
@@ -71,6 +82,12 @@ function diff.close(return_to_source)
   local closing_diff = active_diff
   active_diff = nil
   vim.api.nvim_clear_autocmds({ group = autocommand_group })
+
+  for buffer in pairs(closing_diff.mapped_buffers or {}) do
+    if vim.api.nvim_buf_is_valid(buffer) then
+      pcall(vim.keymap.del, "n", "q", { buffer = buffer })
+    end
+  end
 
   if vim.api.nvim_tabpage_is_valid(closing_diff.tabpage) then
     vim.api.nvim_set_current_tabpage(closing_diff.tabpage)

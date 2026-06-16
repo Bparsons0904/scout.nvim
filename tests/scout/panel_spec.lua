@@ -1,37 +1,28 @@
 local panel = require("scout.panel")
 
-describe("panel.path_from_line", function()
-  it("parses an unreviewed line", function()
-    local path, status = panel.path_from_line("  M  src/foo.lua")
-    assert.equals("src/foo.lua", path)
-    assert.equals("M", status)
+describe("panel.file_at_line", function()
+  after_each(function()
+    panel.close()
   end)
 
-  it("parses a reviewed line with the ✓ prefix", function()
-    local path, status = panel.path_from_line("\xE2\x9C\x93 M  src/store.ts")
-    assert.equals("src/store.ts", path)
-    assert.equals("M", status)
-  end)
+  it("maps rows to files and nil to the blank/separator rows", function()
+    panel.open(
+      {
+        { status = "M", path = "src/foo.lua" },
+        { status = "A", path = "src/bar.lua" },
+      },
+      { ["src/bar.lua"] = "h1" },
+      { integration_enabled = function() return false end },
+      {},
+      vim.fn.getcwd()
+    )
 
-  it("parses each status letter", function()
-    for _, s in ipairs({ "A", "D", "R", "T" }) do
-      local path, status = panel.path_from_line("  " .. s .. "  a/b.lua")
-      assert.equals("a/b.lua", path)
-      assert.equals(s, status)
-    end
-  end)
-
-  it("keeps spaces inside the path", function()
-    local path = panel.path_from_line("  M  my dir/my file.lua")
-    assert.equals("my dir/my file.lua", path)
-  end)
-
-  it("returns nil for the reviewed separator", function()
-    assert.is_nil(panel.path_from_line("── reviewed ─────────────────────────"))
-  end)
-
-  it("returns nil for a blank line", function()
-    assert.is_nil(panel.path_from_line(""))
+    -- Row 1: the lone unreviewed file. Rows 2-3: blank + "reviewed" separator.
+    -- Row 4: the reviewed file.
+    assert.equals("src/foo.lua", panel.file_at_line(1).path)
+    assert.is_nil(panel.file_at_line(2))
+    assert.is_nil(panel.file_at_line(3))
+    assert.equals("src/bar.lua", panel.file_at_line(4).path)
   end)
 end)
 
