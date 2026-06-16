@@ -134,10 +134,7 @@ end
 
 function git.changed_files(base_commit, repository_root)
   local name_status_result = vim
-    .system(
-      command({ "diff", "--no-ext-diff", "--name-status", "-z", base_commit, "HEAD", "--" }, repository_root),
-      { text = false }
-    )
+    .system(command({ "diff", "--no-ext-diff", "--name-status", "-z", base_commit, "--" }, repository_root), { text = false })
     :wait()
   if name_status_result.code ~= 0 then
     return nil, trim_newlines(name_status_result.stderr or "")
@@ -145,10 +142,7 @@ function git.changed_files(base_commit, repository_root)
   local changed_files = git.parse_name_status(name_status_result.stdout or "")
 
   local numstat_result = vim
-    .system(
-      command({ "diff", "--no-ext-diff", "--numstat", "-z", base_commit, "HEAD", "--" }, repository_root),
-      { text = false }
-    )
+    .system(command({ "diff", "--no-ext-diff", "--numstat", "-z", base_commit, "--" }, repository_root), { text = false })
     :wait()
   if numstat_result.code == 0 then
     local statistics = git.parse_numstat(numstat_result.stdout or "")
@@ -161,6 +155,41 @@ function git.changed_files(base_commit, repository_root)
     end
   end
   return changed_files
+end
+
+function git.blob_hash(path, repository_root)
+  return run({ "hash-object", "--", path }, repository_root)
+end
+
+function git.blob_hashes(paths, repository_root)
+  local existing = {}
+  for _, path in ipairs(paths) do
+    local absolute = repository_root and (repository_root .. "/" .. path) or path
+    if vim.uv.fs_stat(absolute) then
+      existing[#existing + 1] = path
+    end
+  end
+  local hashes = {}
+  if #existing == 0 then
+    return hashes
+  end
+  local result = vim
+    .system(command({ "hash-object", "--stdin-paths" }, repository_root), {
+      text = true,
+      stdin = table.concat(existing, "\n") .. "\n",
+    })
+    :wait()
+  if result.code ~= 0 then
+    return hashes
+  end
+  local index = 1
+  for line in (result.stdout or ""):gmatch("[^\r\n]+") do
+    if existing[index] then
+      hashes[existing[index]] = line
+    end
+    index = index + 1
+  end
+  return hashes
 end
 
 return git

@@ -126,3 +126,67 @@ describe("git.parse_numstat", function()
     assert.same({}, git.parse_numstat(""))
   end)
 end)
+
+describe("git.blob_hash", function()
+  local git = require("scout.git")
+  local dir
+
+  before_each(function()
+    dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, "p")
+  end)
+
+  after_each(function()
+    vim.fn.delete(dir, "rf")
+  end)
+
+  it("returns a 40-char hash and is stable for identical content", function()
+    vim.fn.writefile({ "hello" }, dir .. "/a.txt")
+    local first = git.blob_hash("a.txt", dir)
+    local second = git.blob_hash("a.txt", dir)
+    assert.is_truthy(first)
+    assert.equals(40, #first)
+    assert.equals(first, second)
+  end)
+
+  it("changes when content changes", function()
+    vim.fn.writefile({ "hello" }, dir .. "/a.txt")
+    local before = git.blob_hash("a.txt", dir)
+    vim.fn.writefile({ "hello world" }, dir .. "/a.txt")
+    local after = git.blob_hash("a.txt", dir)
+    assert.not_equals(before, after)
+  end)
+
+  it("returns nil for a missing file", function()
+    assert.is_nil(git.blob_hash("missing.txt", dir))
+  end)
+end)
+
+describe("git.blob_hashes", function()
+  local git = require("scout.git")
+  local dir
+
+  before_each(function()
+    dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, "p")
+  end)
+
+  after_each(function()
+    vim.fn.delete(dir, "rf")
+  end)
+
+  it("hashes many files in one batch and skips a missing one", function()
+    vim.fn.writefile({ "hello" }, dir .. "/a.txt")
+    vim.fn.writefile({ "world" }, dir .. "/b.txt")
+
+    local hashes = git.blob_hashes({ "a.txt", "missing.txt", "b.txt" }, dir)
+
+    assert.equals(git.blob_hash("a.txt", dir), hashes["a.txt"])
+    assert.equals(git.blob_hash("b.txt", dir), hashes["b.txt"])
+    assert.is_nil(hashes["missing.txt"])
+  end)
+
+  it("returns an empty map for no paths", function()
+    assert.same({}, git.blob_hashes({}, dir))
+  end)
+end)

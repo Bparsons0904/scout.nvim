@@ -2,11 +2,15 @@ local session = require("scout.session")
 local git = require("scout.git")
 
 describe("session._make_key", function()
-  it("changes when HEAD changes", function()
-    local first = session._make_key("/repo", "feature", "main", "base", "head-one")
-    local second = session._make_key("/repo", "feature", "main", "base", "head-two")
+  it("ignores commit identity so state survives new commits", function()
+    local key = session._make_key("/repo", "feature", "main")
+    assert.equals("/repo|feature|main", key)
+  end)
 
-    assert.not_equals(first, second)
+  it("changes when branch or base reference changes", function()
+    local base = session._make_key("/repo", "feature", "main")
+    assert.not_equals(base, session._make_key("/repo", "other", "main"))
+    assert.not_equals(base, session._make_key("/repo", "feature", "develop"))
   end)
 end)
 
@@ -60,5 +64,64 @@ describe("session.start failures", function()
     assert.equals("scout: could not determine repository root", notifications[1].message)
     assert.equals(vim.log.levels.ERROR, notifications[1].level)
     assert.is_false(session.is_active())
+  end)
+end)
+
+describe("session._reconcile_reviewed", function()
+  local changed = {
+    { status = "M", path = "kept.lua" },
+    { status = "M", path = "changed.lua" },
+    { status = "D", path = "gone.lua" },
+  }
+
+  local function hash_for(map)
+    return function(path)
+      return map[path]
+    end
+  end
+
+  it("keeps files whose hash still matches", function()
+    local result = session._reconcile_reviewed(
+      { ["kept.lua"] = "h1" },
+      changed,
+      hash_for({ ["kept.lua"] = "h1" })
+    )
+    assert.same({ ["kept.lua"] = "h1" }, result)
+  end)
+
+  it("drops files whose hash changed", function()
+    local result = session._reconcile_reviewed(
+      { ["changed.lua"] = "old" },
+      changed,
+      hash_for({ ["changed.lua"] = "new" })
+    )
+    assert.same({}, result)
+  end)
+
+  it("prunes paths no longer in the diff", function()
+    local result = session._reconcile_reviewed(
+      { ["kept.lua"] = "h1", ["vanished.lua"] = "h9" },
+      changed,
+      hash_for({ ["kept.lua"] = "h1" })
+    )
+    assert.same({ ["kept.lua"] = "h1" }, result)
+  end)
+
+  it("migrates a legacy array, backfilling current hashes", function()
+    local result = session._reconcile_reviewed(
+      { "kept.lua" },
+      changed,
+      hash_for({ ["kept.lua"] = "current" })
+    )
+    assert.same({ ["kept.lua"] = "current" }, result)
+  end)
+
+  it("keeps a still-deleted file via the deleted sentinel", function()
+    local result = session._reconcile_reviewed(
+      { ["gone.lua"] = "__deleted__" },
+      changed,
+      hash_for({})
+    )
+    assert.same({ ["gone.lua"] = "__deleted__" }, result)
   end)
 end)

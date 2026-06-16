@@ -4,8 +4,8 @@ Structured branch review mode for Neovim. Scout gives you a file panel for the c
 
 ## Features
 
-- Side panel listing all changed files split into unreviewed / reviewed sections, with color-coded status letters and per-file +added/-deleted line counts
-- Mark files as reviewed with `r`; progress persists across restarts until the branch receives a new commit
+- Side panel listing all changed files (committed and uncommitted, relative to the merge-base) split into unreviewed / reviewed sections, with color-coded status letters and per-file +added/-deleted line counts
+- Mark files as reviewed with `r`; progress persists across restarts and survives new commits — a file is automatically un-reviewed when its content changes
 - Auto-preview: hovering a file opens it in the main window and, with gitsigns enabled, jumps to the first changed hunk
 - `d` opens a full side-by-side diff via diffview.nvim
 - Gitsigns gutters show diffs relative to the merge-base, not HEAD
@@ -49,19 +49,27 @@ require("scout").setup({
     diffview  = true,
     telescope = true,
   },
+  exclude = {},                        -- glob patterns for files to hide
 })
 ```
 
 Set a keymap to `false` to disable it.
+
+`exclude` takes a list of glob patterns (shell-style `*` matches across `/`). Files whose repo-relative path matches any pattern are hidden from the panel. Press `x` in the panel to reveal excluded files temporarily.
+
+```lua
+require("scout").setup({ exclude = { "*_test.go", "vendor/*" } })
+```
 
 ## Usage
 
 1. `:Scout` — start a session in the current buffer's repository, falling back to cwd (auto-detects the default branch: origin's HEAD, `origin/main`/`origin/master`, or local `main`/`master`)
 2. `:Scout my-base-branch` — start against a specific base
 3. `<leader>rV` — open a Telescope branch picker to choose the base
-4. In the panel: `<CR>` open · `d` diff · `r` toggle reviewed · `q` close · `?` help (for deleted files, `<CR>` opens the diff). `q` only closes the panel — the session stays alive, so `:Scout` (or `<leader>rv`) reopens it.
+4. In the panel: `<CR>` open · `d` diff · `r` toggle reviewed · `x` toggle excluded · `q` close · `?` help (for deleted files, `<CR>` opens the diff). `q` only closes the panel — the session stays alive, so `:Scout` (or `<leader>rv`) reopens it.
 5. In a Scout-opened Diffview: `q` or `:ScoutDiffClose` closes the diff and returns to the Scout panel
-6. `:ScoutQuit` or `<leader>rq` — exit review mode from either Scout or its Diffview
+6. `:ScoutRefresh` — re-scan changed files after a new commit, amend, or rebase (Scout also re-scans automatically when focus returns and HEAD has moved)
+7. `:ScoutQuit` or `<leader>rq` — exit review mode from either Scout or its Diffview
 
 ## Panel
 

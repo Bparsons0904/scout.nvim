@@ -5,6 +5,7 @@ local persistence = require("scout.persist")
 local gutters = require("scout.gutters")
 local panel = require("scout.panel")
 local diff = require("scout.diff")
+local util = require("scout.util")
 
 ---@class ScoutSession
 ---@field base_reference string
@@ -19,23 +20,133 @@ local diff = require("scout.diff")
 local active_session = nil
 local configuration = {}
 
+local DELETED_SENTINEL = "__deleted__"
+
+function session._reconcile_reviewed(saved_reviewed, changed_files, blob_hash)
+  local status_by_path = {}
+  for _, file in ipairs(changed_files) do
+    status_by_path[file.path] = file.status
+  end
+
+  local is_legacy = type(saved_reviewed[1]) == "string"
+  local stored = {}
+  if is_legacy then
+    for _, path in ipairs(saved_reviewed) do
+      stored[path] = true
+    end
+  else
+    for path, hash in pairs(saved_reviewed) do
+      stored[path] = hash
+    end
+  end
+
+  local function current_hash(path)
+    if status_by_path[path] == "D" then
+      return DELETED_SENTINEL
+    end
+    return blob_hash(path)
+  end
+
+  local reviewed = {}
+  for path, stored_hash in pairs(stored) do
+    if status_by_path[path] then
+      local now = current_hash(path)
+      if stored_hash == true then
+        -- Legacy entry without a hash: keep it and backfill the current hash.
+        if now then
+          reviewed[path] = now
+        end
+      elseif now and now == stored_hash then
+        reviewed[path] = now
+      end
+    end
+  end
+  return reviewed
+end
+
+local function reconcile_batched(saved_reviewed, changed_files, repository_root)
+  local stored_paths = {}
+  if type(saved_reviewed[1]) == "string" then
+    for _, path in ipairs(saved_reviewed) do
+      stored_paths[#stored_paths + 1] = path
+    end
+  else
+    for path in pairs(saved_reviewed) do
+      stored_paths[#stored_paths + 1] = path
+    end
+  end
+  local hashes = git.blob_hashes(stored_paths, repository_root)
+  return session._reconcile_reviewed(saved_reviewed, changed_files, function(path)
+    return hashes[path]
+  end)
+end
+
 function session.integration_enabled(name)
   return not configuration.integrations or configuration.integrations[name] ~= false
 end
 
-function session._make_key(repository_root, branch, base_reference, base_commit, head_commit)
-  return table.concat({ repository_root, branch, base_reference, base_commit, head_commit }, "|")
+function session._make_key(repository_root, branch, base_reference)
+  return table.concat({ repository_root, branch, base_reference }, "|")
+end
+
+local function fingerprint_for(current, path)
+  for _, file in ipairs(current.changed_files) do
+    if file.path == path and file.status == "D" then
+      return DELETED_SENTINEL
+    end
+  end
+  return git.blob_hash(path, current.repository_root)
 end
 
 local function persist_reviewed()
   if not active_session then
     return
   end
-  local reviewed_paths = {}
-  for path in pairs(active_session.reviewed_paths) do
-    table.insert(reviewed_paths, path)
-  end
-  persistence.save(active_session.persistence_key, { reviewed = reviewed_paths })
+  persistence.save(active_session.persistence_key, { reviewed = active_session.reviewed_paths })
+end
+
+local live_group = vim.api.nvim_create_augroup("scout_live_review", { clear = true })
+
+local function setup_live_tracking()
+  vim.api.nvim_clear_autocmds({ group = live_group })
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    group = live_group,
+    callback = function(event)
+      if not active_session then
+        return
+      end
+      local saved_path = event.file
+      local relative_path = util.relative_to_root(saved_path, active_session.repository_root)
+      if not relative_path then
+        return
+      end
+      local stored_hash = active_session.reviewed_paths[relative_path]
+      if not stored_hash then
+        return
+      end
+      local current = git.blob_hash(relative_path, active_session.repository_root)
+      if current and current ~= stored_hash then
+        active_session.reviewed_paths[relative_path] = nil
+        persist_reviewed()
+        if panel.is_open() then
+          panel.refresh()
+        end
+      end
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("FocusGained", {
+    group = live_group,
+    callback = function()
+      if not active_session then
+        return
+      end
+      local head = git.head(active_session.repository_root)
+      if head and head ~= active_session.head_commit then
+        session.refresh()
+      end
+    end,
+  })
 end
 
 function session.set_config(new_configuration)
@@ -50,7 +161,11 @@ local function open_panel()
   panel.open(current.changed_files, current.reviewed_paths, {
     integration_enabled = session.integration_enabled,
     on_select = function(path)
-      vim.cmd("edit " .. vim.fn.fnameescape(current.repository_root .. "/" .. path))
+      local target = vim.fs.normalize(current.repository_root .. "/" .. path)
+      local opened, error_message = pcall(vim.cmd, "edit " .. vim.fn.fnameescape(target))
+      if not opened then
+        vim.notify("scout: could not open " .. path .. ": " .. tostring(error_message), vim.log.levels.WARN)
+      end
     end,
     on_diff = function(path)
       if session.integration_enabled("diffview") then
@@ -59,7 +174,13 @@ local function open_panel()
     end,
     on_reviewed = function(path, is_reviewed)
       if is_reviewed then
-        current.reviewed_paths[path] = true
+        local fingerprint = fingerprint_for(current, path)
+        if fingerprint then
+          current.reviewed_paths[path] = fingerprint
+        else
+          current.reviewed_paths[path] = nil
+          vim.notify("scout: could not fingerprint " .. path .. "; not marked reviewed", vim.log.levels.WARN)
+        end
       else
         current.reviewed_paths[path] = nil
       end
@@ -129,12 +250,9 @@ function session.start(base_reference_override)
     vim.notify("scout: could not determine current branch", vim.log.levels.ERROR)
     return
   end
-  local persistence_key = session._make_key(repository_root, branch, base_reference, base_commit, head_commit)
+  local persistence_key = session._make_key(repository_root, branch, base_reference)
   local saved_state = persistence.load(persistence_key)
-  local reviewed_paths = {}
-  for _, path in ipairs(saved_state.reviewed or {}) do
-    reviewed_paths[path] = true
-  end
+  local reviewed_paths = reconcile_batched(saved_state.reviewed or {}, changed_files, repository_root)
 
   active_session = {
     base_reference = base_reference,
@@ -146,26 +264,60 @@ function session.start(base_reference_override)
     head_commit = head_commit,
   }
 
+  persist_reviewed()
+  setup_live_tracking()
+
   if session.integration_enabled("gitsigns") then
     gutters.activate(base_commit)
   end
 
   open_panel()
 
+  local filter = require("scout.filter")
+  local exclude_patterns = configuration.exclude or {}
+  local visible_count = 0
+  for _, file in ipairs(changed_files) do
+    if not filter.is_excluded(file.path, exclude_patterns) then
+      visible_count = visible_count + 1
+    end
+  end
   local reviewed_count = 0
-  for _ in pairs(reviewed_paths) do
-    reviewed_count = reviewed_count + 1
+  for path in pairs(reviewed_paths) do
+    if not filter.is_excluded(path, exclude_patterns) then
+      reviewed_count = reviewed_count + 1
+    end
   end
   vim.notify(
     string.format(
       "scout: %s (%s) — %d files, %d reviewed",
       base_reference,
       base_commit:sub(1, 7),
-      #changed_files,
+      visible_count,
       reviewed_count
     ),
     vim.log.levels.INFO
   )
+end
+
+function session.refresh()
+  local current = active_session
+  if not current then
+    vim.notify("scout: no active session", vim.log.levels.INFO)
+    return
+  end
+  local changed_files, changed_files_error = git.changed_files(current.base_commit, current.repository_root)
+  if not changed_files then
+    vim.notify("scout: could not refresh: " .. (changed_files_error or "unknown Git error"), vim.log.levels.ERROR)
+    return
+  end
+  local reviewed_paths = reconcile_batched(current.reviewed_paths, changed_files, current.repository_root)
+  current.changed_files = changed_files
+  current.reviewed_paths = reviewed_paths
+  current.head_commit = git.head(current.repository_root) or current.head_commit
+  persist_reviewed()
+  if panel.is_open() then
+    panel.set_files(changed_files, reviewed_paths)
+  end
 end
 
 function session.stop()
@@ -179,6 +331,7 @@ function session.stop()
     gutters.restore()
   end
   active_session = nil
+  vim.api.nvim_clear_autocmds({ group = live_group })
   vim.notify("scout: exited", vim.log.levels.INFO)
 end
 

@@ -47,12 +47,22 @@ Default options: >lua
       diffview  = true,  -- open diffview.nvim on `d` in panel
       telescope = true,  -- use telescope for branch picker
     },
+    exclude = {},        -- glob patterns; matching files are hidden from panel
   })
 <
 
 To disable a keymap, set it to `false`: >lua
   opts = { keys = { start_pick = false } }
 <
+
+                                                                *scout-exclude*
+`exclude` ~
+  A list of glob patterns. Any file whose repo-relative path matches a pattern
+  is hidden from the review panel. Globs use shell-style `*` (which matches
+  across `/`), compiled via `glob2regpat`. Example: >lua
+    require("scout").setup({ exclude = { "*_test.go", "vendor/*" } })
+<
+  Press `x` in the panel to toggle visibility of excluded files.
 
 ==============================================================================
 COMMANDS                                                        *scout-commands*
@@ -74,6 +84,12 @@ COMMANDS                                                        *scout-commands*
 `:ScoutDiffClose`                                          *:ScoutDiffClose*
   Close the Diffview opened by Scout and return focus to the Scout panel.
 
+`:ScoutRefresh`                                              *:ScoutRefresh*
+  Re-scan the changed files for the active session and update the panel,
+  preserving reviewed state for files whose content is unchanged. Useful
+  after a new commit, amend, or rebase. Scout also refreshes automatically
+  when focus returns to Neovim and HEAD has moved.
+
 ==============================================================================
 PANEL KEYMAPS                                                   *scout-panel*
 
@@ -83,6 +99,8 @@ These keymaps are active only inside the Scout panel buffer:
          file (status D) there is no working-tree copy, so <CR> opens its diff.
   d      Open a side-by-side diff via diffview.nvim
   r      Toggle the file's reviewed status (✓ / unreviewed)
+  x      Toggle visibility of excluded files (show/hide files matching the
+         `exclude` patterns)
   q      Close the panel (does not end the session). Re-run :Scout or the
          start keymap to reopen it for the same session.
   ?      Show this keymap reference as a notification
@@ -94,7 +112,10 @@ panel. `:ScoutDiffClose` provides the same behavior.
 FEATURES                                                        *scout-features*
 
 File display ~
-  Each panel line shows the status letter and path, plus right-aligned
+  The panel lists every file that differs from the merge-base, including
+  uncommitted working-tree changes, so the panel and the gitsigns gutters
+  always agree on what changed. Each panel line shows the status letter and
+  path, plus right-aligned
   +added/-deleted line counts. The status letter is color-coded: A green,
   M/R/T orange, D red. Counts are omitted for binary files. The highlight
   groups (`ScoutStatusAdded`, `ScoutStatusModified`, `ScoutStatusDeleted`,
@@ -111,9 +132,10 @@ Persistence ~
   Reviewed-file state is saved to:
     `$XDG_STATE_HOME/nvim/scout/{sha256(key)}.json`
 
-  Re-entering review mode for the same branch/base/HEAD restores your previous
-  progress. A new commit starts fresh progress so changed content is never
-  silently treated as already reviewed.
+  Reviewed marks persist across Neovim restarts and across new commits on the
+  branch. A file is automatically dropped from the reviewed set when its
+  content changes — whether via a new commit or an in-progress edit saved to
+  disk — so changed content is never silently treated as already reviewed.
 
 Optional integrations ~
   All three optional integrations (gitsigns, diffview, telescope) degrade

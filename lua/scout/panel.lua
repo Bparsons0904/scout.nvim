@@ -41,6 +41,8 @@ local state = {
   reviewed_paths = {},
   callback_handlers = {},
   configuration = {},
+  exclude_patterns = {},
+  show_excluded = false,
 }
 
 local function render()
@@ -48,6 +50,7 @@ local function render()
     return
   end
 
+  local filter = require("scout.filter")
   vim.bo[state.buffer].modifiable = true
   local lines = {}
   local files_by_line = {}
@@ -55,7 +58,9 @@ local function render()
   local separator_index = nil
 
   for _, file in ipairs(state.changed_files) do
-    if state.reviewed_paths[file.path] then
+    if not state.show_excluded and filter.is_excluded(file.path, state.exclude_patterns) then
+      -- hidden
+    elseif state.reviewed_paths[file.path] then
       table.insert(reviewed_files, file)
     else
       table.insert(unreviewed_files, file)
@@ -77,7 +82,6 @@ local function render()
     table.insert(files_by_line, false)
     separator_index = #lines
     for _, file in ipairs(reviewed_files) do
-      -- Extmark columns are byte-indexed, and the checkmark occupies three bytes.
       table.insert(lines, string.format("\xE2\x9C\x93 %s  %s", file.status, vim.fn.strtrans(file.path)))
       table.insert(files_by_line, file)
       table.insert(highlight_marks, { line = #lines - 1, file = file, status_column = 4 })
@@ -126,9 +130,8 @@ local function render()
   end
 end
 
-function panel.path_from_line(line)
-  local status, path = line:match("^.-%s+([ADMRT])%s+(.+)$")
-  return path, status
+function panel.file_at_line(line_number)
+  return state.files_by_line[line_number] or nil
 end
 
 local function current_file()
@@ -147,9 +150,10 @@ function panel.open(changed_files, reviewed_paths, callback_handlers, configurat
   state.reviewed_paths = reviewed_paths or {}
   state.callback_handlers = callback_handlers or {}
   state.configuration = configuration or {}
+  state.exclude_patterns = (configuration and configuration.exclude) or {}
+  state.show_excluded = false
   state.repository_root = repository_root
 
-  -- The split steals focus, so capture the editing window first.
   state.main_window = vim.api.nvim_get_current_win()
   local focused_path = vim.api.nvim_buf_get_name(0)
 
@@ -172,11 +176,8 @@ function panel.open(changed_files, reviewed_paths, callback_handlers, configurat
 
   render()
 
-  -- Seeding the preview path prevents the initial CursorMoved from reopening the current file.
-  if focused_path ~= "" and repository_root then
-    local root_prefix = repository_root .. "/"
-    local relative_path = focused_path:sub(1, #root_prefix) == root_prefix and focused_path:sub(#root_prefix + 1)
-      or focused_path
+  local relative_path = require("scout.util").relative_to_root(focused_path, repository_root)
+  if relative_path then
     for line_number, file in ipairs(state.files_by_line) do
       if file and file.path == relative_path then
         state.preview_path = relative_path
@@ -240,14 +241,21 @@ function panel.open(changed_files, reviewed_paths, callback_handlers, configurat
     end
   end, keymap_options)
 
+  vim.keymap.set("n", "x", function()
+    state.show_excluded = not state.show_excluded
+    render()
+  end, keymap_options)
+
   vim.keymap.set("n", "q", function()
     panel.close()
   end, keymap_options)
   vim.keymap.set("n", "?", function()
-    vim.notify("Scout panel:\n<CR> open file  d diff  r toggle reviewed  q close", vim.log.levels.INFO)
+    vim.notify(
+      "Scout panel:\n<CR> open file  d diff  r toggle reviewed  x toggle excluded  q close",
+      vim.log.levels.INFO
+    )
   end, keymap_options)
 
-  -- Debouncing avoids opening every file during rapid cursor movement.
   vim.api.nvim_create_autocmd("CursorMoved", {
     buffer = state.buffer,
     callback = function()
@@ -292,12 +300,14 @@ function panel.open(changed_files, reviewed_paths, callback_handlers, configurat
           end
           state.preview_path = path
 
-          local absolute_path = state.repository_root .. "/" .. path
-          local current_buffer_name = vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(state.main_window))
+          local absolute_path = vim.fs.normalize(state.repository_root .. "/" .. path)
+          local current_buffer_name =
+            vim.fs.normalize(vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(state.main_window)))
 
           vim.api.nvim_win_call(state.main_window, function()
             if current_buffer_name ~= absolute_path then
-              vim.cmd("edit " .. vim.fn.fnameescape(absolute_path))
+              -- Fails silently: a notify per cursor move would spam; keepjumps keeps the jumplist clean.
+              pcall(vim.cmd, "keepjumps edit " .. vim.fn.fnameescape(absolute_path))
             end
           end)
 
@@ -360,6 +370,8 @@ function panel.close()
   state.reviewed_paths = {}
   state.callback_handlers = {}
   state.configuration = {}
+  state.exclude_patterns = {}
+  state.show_excluded = false
 end
 
 function panel.is_open()
@@ -370,6 +382,18 @@ function panel.focus()
   if state.window and vim.api.nvim_win_is_valid(state.window) then
     vim.api.nvim_set_current_win(state.window)
   end
+end
+
+function panel.refresh()
+  render()
+end
+
+function panel.set_files(changed_files, reviewed_paths)
+  state.changed_files = changed_files or {}
+  if reviewed_paths then
+    state.reviewed_paths = reviewed_paths
+  end
+  render()
 end
 
 return panel
