@@ -134,6 +134,25 @@ function panel.file_at_line(line_number)
   return state.files_by_line[line_number] or nil
 end
 
+-- Picks the line the cursor should rest on after a re-render: keep the same row
+-- if it still holds a file, otherwise the nearest file above, then below.
+function panel._cursor_target_line(files_by_line, preferred_line)
+  if files_by_line[preferred_line] then
+    return preferred_line
+  end
+  for line_number = preferred_line - 1, 1, -1 do
+    if files_by_line[line_number] then
+      return line_number
+    end
+  end
+  for line_number = preferred_line + 1, #files_by_line do
+    if files_by_line[line_number] then
+      return line_number
+    end
+  end
+  return preferred_line
+end
+
 local function current_file()
   local line_number = vim.api.nvim_win_get_cursor(0)[1]
   return state.files_by_line[line_number] or nil
@@ -231,14 +250,13 @@ function panel.open(changed_files, reviewed_paths, callback_handlers, configurat
     if state.callback_handlers.on_reviewed then
       state.callback_handlers.on_reviewed(path, is_now_reviewed)
     end
+    local previous_line = vim.api.nvim_win_get_cursor(state.window)[1]
     render()
-    local buffer_lines = vim.api.nvim_buf_get_lines(state.buffer, 0, -1, false)
-    for line_number = 1, #buffer_lines do
-      if state.files_by_line[line_number] and state.files_by_line[line_number].path == path then
-        pcall(vim.api.nvim_win_set_cursor, state.window, { line_number, 0 })
-        break
-      end
-    end
+    pcall(
+      vim.api.nvim_win_set_cursor,
+      state.window,
+      { panel._cursor_target_line(state.files_by_line, previous_line), 0 }
+    )
   end, keymap_options)
 
   vim.keymap.set("n", "x", function()

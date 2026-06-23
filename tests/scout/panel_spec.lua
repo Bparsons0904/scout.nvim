@@ -26,6 +26,25 @@ describe("panel.file_at_line", function()
   end)
 end)
 
+describe("panel._cursor_target_line", function()
+  local foo = { path = "a" }
+  local bar = { path = "b" }
+
+  it("keeps the same line when it still holds a file", function()
+    -- After reviewing a middle file the next unreviewed file shifts up into it.
+    assert.equals(2, panel._cursor_target_line({ foo, bar, false }, 2))
+  end)
+
+  it("moves up to the previous file when the line is now blank", function()
+    -- Reviewing the bottom unreviewed file leaves the blank/separator under cursor.
+    assert.equals(1, panel._cursor_target_line({ foo, false, false }, 2))
+  end)
+
+  it("falls back downward when no file sits above", function()
+    assert.equals(3, panel._cursor_target_line({ false, false, foo }, 1))
+  end)
+end)
+
 describe("panel rendering", function()
   after_each(function()
     panel.close()
