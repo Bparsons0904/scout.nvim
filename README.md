@@ -64,11 +64,11 @@ require("scout").setup({ exclude = { "*_test.go", "vendor/*" } })
 ## Usage
 
 1. `:Scout` — start a session in the current buffer's repository, falling back to cwd (auto-detects the default branch: origin's HEAD, `origin/main`/`origin/master`, or local `main`/`master`)
-2. `:Scout my-base-branch` — start against a specific base
+2. `:Scout my-base-branch` — start against a specific base; unqualified names such as `develop` prefer `origin/develop` when that ref exists
 3. `<leader>rV` — open a Telescope branch picker to choose the base
 4. In the panel: `<CR>` open · `d` diff · `r` toggle reviewed · `x` toggle excluded · `q` close · `?` help (for deleted files, `<CR>` opens the diff). `q` only closes the panel — the session stays alive, so `:Scout` (or `<leader>rv`) reopens it.
 5. In a Scout-opened Diffview: `q` or `:ScoutDiffClose` closes the diff and returns to the Scout panel
-6. `:ScoutRefresh` — re-scan changed files after a new commit, amend, or rebase (Scout also re-scans automatically when focus returns and HEAD has moved)
+6. `:ScoutRefresh` — recompute the merge-base and re-scan changed files after a new commit, amend, rebase, or merge from the base branch (Scout also re-scans automatically when focus returns and HEAD has moved)
 7. `:ScoutQuit` or `<leader>rq` — exit review mode from either Scout or its Diffview
 
 ## Panel

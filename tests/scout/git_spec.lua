@@ -1,5 +1,13 @@
 local git = require("scout.git")
 
+local function run_git(repository_root, arguments)
+  local command = { "git", "-C", repository_root }
+  vim.list_extend(command, arguments)
+  local result = vim.system(command, { text = true }):wait()
+  assert.equals(0, result.code, result.stderr)
+  return result.stdout
+end
+
 describe("git.parse_name_status", function()
   it("parses modified file", function()
     local result = git.parse_name_status("M\0src/foo.lua\0")
@@ -89,6 +97,25 @@ describe("git commands", function()
     vim.cmd.cd(previous)
     vim.fn.delete(tmp, "rf")
     assert.equals(repository_root, actual_root)
+  end)
+
+  it("prefers origin for unqualified base branch names", function()
+    local dir = vim.fn.tempname()
+    vim.fn.mkdir(dir, "p")
+    run_git(dir, { "init" })
+    run_git(dir, { "config", "user.email", "test@example.com" })
+    run_git(dir, { "config", "user.name", "Scout Test" })
+    vim.fn.writefile({ "hello" }, dir .. "/README.md")
+    run_git(dir, { "add", "README.md" })
+    run_git(dir, { "commit", "-m", "initial" })
+    run_git(dir, { "branch", "develop" })
+    run_git(dir, { "update-ref", "refs/remotes/origin/develop", "HEAD" })
+
+    assert.equals("origin/develop", git.preferred_base_reference("develop", dir))
+    assert.equals("origin/develop", git.preferred_base_reference("origin/develop", dir))
+    assert.equals("local-only", git.preferred_base_reference("local-only", dir))
+
+    vim.fn.delete(dir, "rf")
   end)
 end)
 

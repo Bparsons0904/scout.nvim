@@ -1,5 +1,6 @@
 local session = require("scout.session")
 local git = require("scout.git")
+local panel = require("scout.panel")
 
 describe("session._make_key", function()
   it("ignores commit identity so state survives new commits", function()
@@ -64,6 +65,86 @@ describe("session.start failures", function()
     assert.equals("scout: could not determine repository root", notifications[1].message)
     assert.equals(vim.log.levels.ERROR, notifications[1].level)
     assert.is_false(session.is_active())
+  end)
+end)
+
+describe("session.refresh", function()
+  local originals
+  local changed_file_bases
+  local panel_updates
+
+  before_each(function()
+    originals = {
+      default_branch = git.default_branch,
+      merge_base = git.merge_base,
+      changed_files = git.changed_files,
+      root_for_path = git.root_for_path,
+      head = git.head,
+      current_branch = git.current_branch,
+      blob_hashes = git.blob_hashes,
+      panel_open = panel.open,
+      panel_is_open = panel.is_open,
+      panel_set_files = panel.set_files,
+      panel_close = panel.close,
+      notify = vim.notify,
+    }
+    changed_file_bases = {}
+    panel_updates = {}
+
+    session.set_config({ integrations = { gitsigns = false } })
+    git.default_branch = function() return "develop" end
+    git.root_for_path = function() return "/repo" end
+    git.head = function() return "head-sha" end
+    git.current_branch = function() return "feature" end
+    git.blob_hashes = function() return {} end
+    panel.open = function() end
+    panel.is_open = function() return true end
+    panel.set_files = function(files)
+      table.insert(panel_updates, files)
+    end
+    panel.close = function() end
+    vim.notify = function() end
+  end)
+
+  after_each(function()
+    if session.is_active() then
+      session.stop()
+    end
+    git.default_branch = originals.default_branch
+    git.merge_base = originals.merge_base
+    git.changed_files = originals.changed_files
+    git.root_for_path = originals.root_for_path
+    git.head = originals.head
+    git.current_branch = originals.current_branch
+    git.blob_hashes = originals.blob_hashes
+    panel.open = originals.panel_open
+    panel.is_open = originals.panel_is_open
+    panel.set_files = originals.panel_set_files
+    panel.close = originals.panel_close
+    vim.notify = originals.notify
+  end)
+
+  it("recomputes merge-base so upstream merges drop out of the review", function()
+    local merge_bases = { "old-base", "new-base" }
+    git.merge_base = function()
+      return table.remove(merge_bases, 1)
+    end
+    git.changed_files = function(base_commit)
+      table.insert(changed_file_bases, base_commit)
+      if base_commit == "old-base" then
+        return {
+          { status = "M", path = "ours.lua" },
+          { status = "M", path = "upstream.lua" },
+        }
+      end
+      return { { status = "M", path = "ours.lua" } }
+    end
+
+    session.start()
+    session.refresh()
+
+    assert.same({ "old-base", "new-base" }, changed_file_bases)
+    assert.same({ { status = "M", path = "ours.lua" } }, panel_updates[1])
   end)
 end)
 

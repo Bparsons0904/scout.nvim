@@ -215,7 +215,7 @@ function session.start(base_reference_override)
     return
   end
 
-  local base_reference = base_reference_override or git.default_branch(repository_root)
+  local base_reference = git.preferred_base_reference(base_reference_override or git.default_branch(repository_root), repository_root)
   if not base_reference then
     vim.notify("scout: could not determine default branch", vim.log.levels.ERROR)
     return
@@ -305,16 +305,28 @@ function session.refresh()
     vim.notify("scout: no active session", vim.log.levels.INFO)
     return
   end
-  local changed_files, changed_files_error = git.changed_files(current.base_commit, current.repository_root)
+  local base_reference = git.preferred_base_reference(current.base_reference, current.repository_root)
+  local base_commit = git.merge_base(base_reference, current.repository_root)
+  if not base_commit then
+    vim.notify("scout: could not refresh merge-base with " .. base_reference, vim.log.levels.ERROR)
+    return
+  end
+
+  local changed_files, changed_files_error = git.changed_files(base_commit, current.repository_root)
   if not changed_files then
     vim.notify("scout: could not refresh: " .. (changed_files_error or "unknown Git error"), vim.log.levels.ERROR)
     return
   end
   local reviewed_paths = reconcile_batched(current.reviewed_paths, changed_files, current.repository_root)
+  current.base_reference = base_reference
+  current.base_commit = base_commit
   current.changed_files = changed_files
   current.reviewed_paths = reviewed_paths
   current.head_commit = git.head(current.repository_root) or current.head_commit
   persist_reviewed()
+  if session.integration_enabled("gitsigns") then
+    gutters.activate(base_commit)
+  end
   if panel.is_open() then
     panel.set_files(changed_files, reviewed_paths)
   end

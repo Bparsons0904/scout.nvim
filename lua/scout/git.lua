@@ -128,6 +128,18 @@ function git.default_branch(repository_root)
   return nil
 end
 
+function git.preferred_base_reference(base_reference, repository_root)
+  if not base_reference or base_reference == "" or base_reference:match("^origin/") then
+    return base_reference
+  end
+
+  local origin_reference = "origin/" .. base_reference
+  if run({ "rev-parse", "--verify", origin_reference }, repository_root) then
+    return origin_reference
+  end
+  return base_reference
+end
+
 function git.merge_base(base_reference, repository_root)
   return run({ "merge-base", base_reference, "HEAD" }, repository_root)
 end
