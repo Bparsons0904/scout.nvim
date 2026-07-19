@@ -264,12 +264,16 @@ function panel.open(changed_files, reviewed_paths, callback_handlers, configurat
     render()
   end, keymap_options)
 
+  vim.keymap.set("n", "i", function()
+    require("scout.gutters").toggle_inline()
+  end, keymap_options)
+
   vim.keymap.set("n", "q", function()
     panel.close()
   end, keymap_options)
   vim.keymap.set("n", "?", function()
     vim.notify(
-      "Scout panel:\n<CR> open file  d diff  r toggle reviewed  x toggle excluded  q close",
+      "Scout panel:\n<CR> open file  d diff  i toggle inline diff  r toggle reviewed  x toggle excluded  q close",
       vim.log.levels.INFO
     )
   end, keymap_options)

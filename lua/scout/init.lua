@@ -5,6 +5,7 @@ local defaults = {
     start = "<leader>rv",
     start_pick = "<leader>rV",
     quit = "<leader>rq",
+    toggle_inline = "<leader>ri",
   },
   panel = {
     width = 45,
@@ -94,6 +95,12 @@ function scout.setup(options)
     end, "Scout: start review (pick base branch)")
   end
 
+  if keymaps.toggle_inline then
+    register_key(keymaps.toggle_inline, function()
+      require("scout.gutters").toggle_inline()
+    end, "Scout: toggle inline diff view")
+  end
+
   if keymaps.quit then
     register_key(keymaps.quit, function()
       session.stop()
@@ -115,6 +122,10 @@ function scout.setup(options)
   vim.api.nvim_create_user_command("ScoutRefresh", function()
     session.refresh()
   end, { desc = "Re-scan changed files for the active review", force = true })
+
+  vim.api.nvim_create_user_command("ScoutInline", function()
+    require("scout.gutters").toggle_inline()
+  end, { desc = "Toggle the inline (unified) diff view", force = true })
 
   vim.api.nvim_create_user_command("ScoutDiffClose", function()
     require("scout.diff").close()
